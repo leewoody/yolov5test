@@ -1,0 +1,6 @@
+train: ../MuseumImages/S203.C336.04.00YOLODataset/images/train/
+val: ../MuseumImages/S203.C336.04.00YOLODataset/images/val/
+
+nc: 8
+
+names: ['2002.005.0086', '2002.005.0089', '2002.005.0084', '2002.005.0248', '2002.005.0088', '2007.004.0011.0012', '2004.030.0003', '2005.008.1734']

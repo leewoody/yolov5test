@@ -1,0 +1,6 @@
+sudo apt-get update && sudo apt-get install libgl1 -y && sudo pip install pandas && sudo pip install seaborn && cd /work/jonchang3909/yolov5/ 
+&& python train.py --img 448 --batch 72 --epochs 300 --data ../Regurgitation-YOLODataset-1/dataset.yaml --cfg ./models/yolov5s_SE4_3.yaml --weights '' --name yolov5s_SE1_3 --cache --nosave
+&& python train.py --img 448 --batch 72 --epochs 300 --data ../Regurgitation-YOLODataset-2/dataset.yaml --cfg ./models/yolov5s_SE4_3.yaml --weights '' --name yolov5s_SE2_3 --cache --nosave
+&& python train.py --img 448 --batch 72 --epochs 300 --data ../Regurgitation-YOLODataset-3/dataset.yaml --cfg ./models/yolov5s_SE4_3.yaml --weights '' --name yolov5s_SE3_3 --cache --nosave
+&& python train.py --img 448 --batch 72 --epochs 300 --data ../Regurgitation-YOLODataset-4/dataset.yaml --cfg ./models/yolov5s_SE4_3.yaml --weights '' --name yolov5s_SE4_3 --cache --nosave
+&& python train.py --img 448 --batch 72 --epochs 300 --data ../Regurgitation-YOLODataset-5/dataset.yaml --cfg ./models/yolov5s_SE4_3.yaml --weights '' --name yolov5s_SE5_3 --cache --nosave
