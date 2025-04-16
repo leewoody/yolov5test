@@ -119,27 +119,22 @@ class BaseModel(nn.Module):
         return self._forward_once(x, profile, visualize)  # single-scale inference, train
 
     def _forward_once(self, x, profile=False, visualize=False):
-        print("Model Layers and Connections:")
-        for i, m in enumerate(self.model):
-            print(f"Layer {i}: m.f={m.f}, m.type={m.type}, m={m}")
-        y, dt = [], []  # outputs and timings
-        for i, m in enumerate(self.model):
-            print(f"Processing Layer {i}: m.f={m.f}, len(y)={len(y)}")  # Debugging: show m.f and len(y)
-            # Validate m.f before accessing y
-            if m.f != -1:  # if not from the previous layer
-                if isinstance(m.f, int):
-                    if m.f < 0 or m.f >= len(y):
-                        raise IndexError(f"Invalid index in m.f={m.f}. len(y)={len(y)}.")
-                    x = y[m.f]
-                else:  # m.f is a list
-                    if any(j >= len(y) or j < -1 for j in m.f):
-                        raise IndexError(f"Invalid index in m.f={m.f}. len(y)={len(y)}.")
-                    x = [y[j] if j != -1 else x for j in m.f]
+        y, dt = [], []  # outputs
+        for m in self.model:
+            if m.f != -1:  # if not from previous layer
+                x = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j in m.f]  # from earlier layers
+                
+                # Debug: Print shapes for concat layers
+                if hasattr(m, 'type') and 'Concat' in m.type:
+                    if isinstance(x, list):
+                        print(f"Concat layer inputs: {[t.shape for t in x]}")
+                    else:
+                        print(f"Concat input (not a list): {x.shape}")
+            
             if profile:
-                self._profile_one_layer(m, x, dt)  # profile layer timing
-            x = m(x)  # run the module
-            y.append(x if m.i in self.save else None)  # save output if required
-            # Optional: visualize intermediate features
+                self._profile_one_layer(m, x, dt)
+            x = m(x)  # run
+            y.append(x if m.i in self.save else None)  # save output
             if visualize:
                 feature_visualization(x, m.type, m.i, save_dir=visualize)
         return x
