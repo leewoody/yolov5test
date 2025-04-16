@@ -272,6 +272,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     scheduler.last_epoch = start_epoch - 1  # do not move
     scaler = torch.cuda.amp.GradScaler(enabled=amp)
     stopper, stop = EarlyStopping(patience=opt.patience), False
+    # Attach hyperparameters to the model
+    model.hyp = hyp
     compute_loss = ComputeLoss(model)  # init loss class
     callbacks.run('on_train_start')
     LOGGER.info(f'Image sizes {imgsz} train, {imgsz} val\n'
@@ -348,7 +350,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                     else:
                         detections = pred
 
-                    # Print detection shapes
+                    # Print detection shapes for debugging
                     if isinstance(detections, list):
                         for i, d in enumerate(detections):
                             print(f"detections[{i}].shape = {d.shape}")
@@ -370,8 +372,9 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                         classification_loss = criterion(class_outputs, label_indices)
                         print(f"classification_loss = {classification_loss.item()}")
 
+                    # Total loss is the sum of detection and classification losses
                     total_loss = detection_loss + classification_loss
-
+                    
                     if torch.isnan(total_loss):
                         raise ValueError("NaN loss encountered during training.")
                     print(f"total_loss = {total_loss.item()}")
