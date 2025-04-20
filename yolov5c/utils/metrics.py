@@ -12,6 +12,7 @@ import numpy as np
 import torch
 
 from utils import TryExcept, threaded
+from utils.general import LOGGER
 
 
 def fitness(x):
@@ -177,6 +178,28 @@ class ConfusionMatrix:
                 if not any(m1 == i):
                     self.matrix[dc, self.nc] += 1  # predicted background
 
+    def process_classification_batch(self, true_labels, pred_labels):
+        """
+        Store classification prediction and ground truth data for later confusion matrix generation
+        Args:
+            true_labels: Ground truth labels (tensor or list)
+            pred_labels: Predicted labels (tensor or list)
+        """
+        # Initialize the storage arrays if they don't exist
+        if not hasattr(self, 'classification_true_labels'):
+            self.classification_true_labels = []
+            self.classification_pred_labels = []
+        
+        # Convert tensors to lists if needed
+        if isinstance(true_labels, torch.Tensor):
+            true_labels = true_labels.cpu().numpy().tolist()
+        if isinstance(pred_labels, torch.Tensor):
+            pred_labels = pred_labels.cpu().numpy().tolist()
+            
+        # Store the labels
+        self.classification_true_labels.extend(true_labels)
+        self.classification_pred_labels.extend(pred_labels)
+
     def tp_fp(self):
         tp = self.matrix.diagonal()  # true positives
         fp = self.matrix.sum(1) - tp  # false positives
@@ -186,11 +209,11 @@ class ConfusionMatrix:
     @TryExcept('WARNING ⚠️ ConfusionMatrix plot failure')
     def plot(self, normalize=True, save_dir='', names=()):
         import seaborn as sn
-        from utils.plots import plot_confusion_matrix, plot_classification_confusion_matrix
+        from utils.plots import plot_confusion_matrix
         import numpy as np
         
         try:
-            # Create both confusion matrices - first use the regular detection matrix
+            # Create detection confusion matrix
             array = self.matrix / ((self.matrix.sum(0).reshape(1, -1) + 1E-9) if normalize else 1)  # normalize columns
             array[array < 0.005] = np.nan  # don't annotate (would appear as 0.00)
 
@@ -221,51 +244,22 @@ class ConfusionMatrix:
             # Use custom plot function for detection confusion matrix (same data, better formatting)
             plot_confusion_matrix(self.matrix.copy(), names, normalize=normalize, save_dir=save_dir, prefix='detection')
             
-            # Generate dummy classification data if not available
-            # In a real scenario, you'll want to collect true classification labels and predicted labels
-            # during validation (see simulation below)
+            # If classification data is provided, use it
+            true_labels = getattr(self, 'classification_true_labels', [])
+            pred_labels = getattr(self, 'classification_pred_labels', [])
             
-            # Simulate classification data from detection matrix for demonstration
-            # In real use, replace this with your actual classification predictions and ground truth
-            true_labels = []
-            pred_labels = []
-            
-            # Extract classification data from model outputs during validation
-            # This simulates what would happen with real data
-            for i in range(self.nc):
-                # Simulate 100 samples per class with different accuracy levels
-                samples_per_class = max(100, int(self.matrix.sum(0)[i] + self.matrix.sum(1)[i]) // 2)
-                
-                # True positive rate for this class from confusion matrix
-                if self.matrix.sum(0)[i] > 0:
-                    accuracy = self.matrix[i, i] / self.matrix.sum(0)[i]
-                else:
-                    accuracy = 0.7  # Default accuracy if no data
-                
-                # Generate true labels (all same class)
-                class_true_labels = [i] * samples_per_class
-                
-                # Generate predicted labels (with simulated accuracy)
-                class_pred_labels = []
-                for _ in range(samples_per_class):
-                    if np.random.random() < accuracy:
-                        class_pred_labels.append(i)  # Correct prediction
-                    else:
-                        # Random incorrect prediction
-                        incorrect_class = np.random.choice([c for c in range(self.nc) if c != i])
-                        class_pred_labels.append(incorrect_class)
-                
-                true_labels.extend(class_true_labels)
-                pred_labels.extend(class_pred_labels)
-            
-            # Generate classification confusion matrix
-            plot_classification_confusion_matrix(
-                true_labels, 
-                pred_labels, 
-                names=names, 
-                save_dir=save_dir, 
-                prefix='classification'
-            )
+            # Only generate classification confusion matrix if we have data
+            if len(true_labels) == 0 or len(pred_labels) == 0:
+                LOGGER.warning("No classification data available for confusion matrix. Use 'process_classification_batch' to collect data.")
+            else:
+                # Generate classification confusion matrix using our custom function
+                plot_classification_confusion_matrix(
+                    true_labels, 
+                    pred_labels, 
+                    names=names, 
+                    save_dir=save_dir, 
+                    prefix='classification'
+                )
             
         except Exception as e:
             LOGGER.warning(f'WARNING ⚠️ Confusion matrix plot error: {e}')
@@ -414,3 +408,50 @@ def plot_mc_curve(px, py, save_dir=Path('mc_curve.png'), names=(), xlabel='Confi
     ax.set_title(f'{ylabel}-Confidence Curve')
     fig.savefig(save_dir, dpi=250)
     plt.close(fig)
+
+
+def plot_classification_confusion_matrix(true_labels, pred_labels, names=(), save_dir='', prefix=''):
+    """
+    Plot confusion matrix for classification results
+    Args:
+        true_labels: list of true class labels
+        pred_labels: list of predicted class labels
+        names: list of class names
+        save_dir: directory to save the confusion matrix plot
+        prefix: prefix for the saved file name
+    """
+    try:
+        from sklearn.metrics import confusion_matrix
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        import numpy as np
+
+        # Create confusion matrix
+        cm = confusion_matrix(true_labels, pred_labels)
+        
+        # Normalize the confusion matrix
+        cm_norm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        cm_norm[np.isnan(cm_norm)] = 0
+        
+        # Plot
+        plt.figure(figsize=(12, 9))
+        sns.heatmap(cm_norm, annot=True, fmt='.2f', cmap='Blues',
+                   xticklabels=names, yticklabels=names)
+        plt.xlabel('Predicted')
+        plt.ylabel('True')
+        plt.title('Classification Confusion Matrix')
+        
+        # Save plot
+        save_path = Path(save_dir) / f'{prefix}_confusion_matrix.png'
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=250)
+        plt.close()
+        
+        # Also save the raw matrix data for reference
+        np.savetxt(Path(save_dir) / f'{prefix}_confusion_matrix.csv', cm, delimiter=',', fmt='%d')
+        
+        print(f"Classification confusion matrix saved to {save_path}")
+        return True
+    except Exception as e:
+        print(f"Warning: Classification confusion matrix plot error: {e}")
+        return False
