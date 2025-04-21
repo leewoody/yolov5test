@@ -6,13 +6,16 @@ Model validation metrics
 import math
 import warnings
 from pathlib import Path
+import logging
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
 from utils import TryExcept, threaded
-from utils.general import LOGGER
+
+# Define a local logger to avoid circular import
+LOGGER = logging.getLogger(__name__)
 
 
 def fitness(x):
