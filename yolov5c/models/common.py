@@ -896,11 +896,18 @@ class YOLOv5WithClassification(nn.Module):
         self.num_classes = num_classes
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))  # Output size of (1, 1)
         self.flatten = nn.Flatten()
+        self.dropout = nn.Dropout(0.2)  # Add dropout for regularization
         self.fc = nn.Linear(in_channels, num_classes)  # Initialize FC layer directly
+        
+        # Initialize weights properly
+        nn.init.xavier_uniform_(self.fc.weight)
+        if self.fc.bias is not None:
+            nn.init.constant_(self.fc.bias, 0)
 
     def forward(self, x):
         x = self.avgpool(x)  # Pooling to (1, 1)
         x = self.flatten(x)  # Flatten to (batch_size, in_channels)
+        x = self.dropout(x)  # Apply dropout for regularization
         x = self.fc(x)  # Fully connected layer
         return x
 

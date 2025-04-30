@@ -211,19 +211,59 @@ def run(
 
         # Loss
         if compute_loss:
-            loss += compute_loss(train_out, targets)[1]  # box, obj, cls
-
-        # NMS
+            loss += compute_loss(train_out, targets)[1]  # box, obj, cls        # NMS
         targets[:, 2:] *= torch.tensor((width, height, width, height), device=device)  # to pixels
         lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
         with dt[2]:
-            preds = non_max_suppression(preds,
-                                        conf_thres,
-                                        iou_thres,
-                                        labels=lb,
-                                        multi_label=True,
-                                        agnostic=single_cls,
-                                        max_det=max_det)
+            if isinstance(preds, tuple) and len(preds) > 1:
+                # If preds is a tuple, assume it contains (detection_preds, class_preds)
+                det_preds, class_preds = preds
+                
+                # Process detection predictions
+                det_preds = non_max_suppression(det_preds,
+                                          conf_thres,
+                                          iou_thres,
+                                          labels=lb,
+                                          multi_label=True,
+                                          agnostic=single_cls,
+                                          max_det=max_det)
+                                          
+                # Store the processed detection predictions back in preds
+                preds = det_preds
+                  # Process classification batch for confusion matrix
+                # Use cleaner approach for classification labels
+                if hasattr(dataloader.dataset, 'classification_labels'):
+                    # If dataset provides classification labels directly
+                    batch_indices = targets[:, 0].long()  # Get batch indices
+                    class_labels = torch.tensor([dataloader.dataset.classification_labels[int(idx)] 
+                                              for idx in batch_indices], device=device)
+                elif targets.shape[1] >= 6:  # If targets has at least 6 columns, last column could be class labels
+                    class_labels = targets[:, -1].long()  # Get class labels from the last column
+                else:
+                    # Try to get classification labels from path if they're encoded in filename
+                    # Format: path might be .../class_1/image.jpg or .../image_class1.jpg
+                    batch_indices = targets[:, 0].long()  # Get batch indices
+                    try:
+                        image_paths = [Path(dataloader.dataset.im_files[int(idx)]).stem for idx in batch_indices]
+                        # Example parsing logic - adapt to your naming convention
+                        class_labels = torch.tensor([int(p.split('_')[-1]) if '_' in p else 0 
+                                                for p in image_paths], device=device)
+                    except:
+                        class_labels = None
+                
+                if class_labels is not None and class_labels.numel() > 0 and class_preds is not None:
+                    # Process classification batch for confusion matrix
+                    confusion_matrix.process_classification_batch(class_labels, class_preds.argmax(dim=1))
+                    LOGGER.info(f"Processed classification metrics for {len(class_labels)} images")
+            else:
+                # Normal detection-only case
+                preds = non_max_suppression(preds,
+                                          conf_thres,
+                                          iou_thres,
+                                          labels=lb,
+                                          multi_label=True,
+                                          agnostic=single_cls,
+                                          max_det=max_det)
 
         # Metrics
         for si, pred in enumerate(preds):
