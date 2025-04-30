@@ -358,9 +358,9 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                         print(f"detections.shape = {detections.shape}")
 
                     if class_outputs is not None:
-                        print(f"class_outputs.shape = {class_outputs.shape}")
-
-                    # Compute detection loss
+                        print(f"class_outputs.shape = {class_outputs.shape}")                    # Compute detection loss
+                    # Make sure targets is on the same device as detections
+                    targets = targets.to(detections[0].device)
                     detection_loss, loss_items = compute_loss(detections, targets)
                     print(f"detection_loss = {detection_loss.item()}")
 
