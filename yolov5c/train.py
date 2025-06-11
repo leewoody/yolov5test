@@ -362,26 +362,22 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                     # Make sure targets is on the same device as detections
                     targets = targets.to(detections[0].device)
                     detection_loss, loss_items = compute_loss(detections, targets)
-                    print(f"detection_loss = {detection_loss.item()}")
-
-                    # Classification loss if both outputs and labels exist
-                    classification_loss = 0.0
+                    print(f"detection_loss = {detection_loss.item()}")                    # Classification loss if both outputs and labels exist
+                    classification_loss = torch.tensor(0.0, device=device)  # Initialize as tensor
                     if class_outputs is not None and classification_labels is not None:
                         criterion = nn.CrossEntropyLoss()
                         label_indices = classification_labels.argmax(dim=1)
                         classification_loss = criterion(class_outputs, label_indices)
-                        print(f"classification_loss = {classification_loss.item()}")                    # Weight the classification loss compared to detection loss
+                        print(f"classification_loss = {classification_loss.item()}")# Weight the classification loss compared to detection loss
                     # Get the weight from hyperparameters or use a default
                     classification_loss_weight = opt.hyp.get('classification_weight', 0.1)  # Lower weight for classification
-                    
-                    # If we're in early training, focus more on detection to establish good localization
+                      # If we're in early training, focus more on detection to establish good localization
                     if epoch < opt.epochs * 0.3:  # First 30% of training
                         classification_loss_weight *= 0.5  # Reduce classification importance early
                     
                     total_loss = detection_loss + classification_loss_weight * classification_loss
-                    
-                    # Log the weighted losses for monitoring
-                    if batch_i % 10 == 0:  # Log every 10 batches
+                      # Log the weighted losses for monitoring
+                    if i % 10 == 0:  # Log every 10 batches
                         LOGGER.info(f"Detection loss: {detection_loss.item():.4f}, "
                                    f"Classification loss: {classification_loss.item():.4f} "
                                    f"(weight: {classification_loss_weight:.3f})")
