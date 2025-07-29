@@ -1,0 +1,18 @@
+# YOLOv5 data configuration for heart valve regurgitation detection
+# Classes: AR (Aortic Regurgitation), MR (Mitral Regurgitation), 
+#          PR (Pulmonary Regurgitation), TR (Tricuspid Regurgitation)
+
+# Dataset paths
+train: ../Regurgitation-YOLODataset-1new/train/images
+val: ../Regurgitation-YOLODataset-1new/valid/images
+test: ../Regurgitation-YOLODataset-1new/test/images
+
+# Number of classes
+nc: 4
+
+# Class names
+names:
+  - AR    # Aortic Regurgitation
+  - MR    # Mitral Regurgitation  
+  - PR    # Pulmonary Regurgitation
+  - TR    # Tricuspid Regurgitation 

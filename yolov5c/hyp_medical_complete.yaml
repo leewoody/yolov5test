@@ -1,0 +1,59 @@
+# YOLOv5 Medical Image Complete Hyperparameters
+# Optimized for Heart Ultrasound Detection and Classification
+
+# Optimizer parameters - Medical image optimized
+lr0: 0.006  # Lower initial learning rate for medical stability
+lrf: 0.1  # final OneCycleLR learning rate (lr0 * lrf)
+momentum: 0.937  # SGD momentum/Adam beta1
+weight_decay: 0.0005  # optimizer weight decay
+warmup_epochs: 6.0  # Longer warmup for medical images
+warmup_momentum: 0.8  # warmup initial momentum
+warmup_bias_lr: 0.1  # warmup initial bias lr
+
+# Loss coefficients - Medical detection optimized
+box: 0.035  # Box loss gain (reduced for medical precision)
+cls: 0.2  # Classification loss gain (reduced)
+cls_pw: 1.0  # Classification BCELoss positive_weight
+obj: 1.0  # Objectness loss gain
+obj_pw: 1.0  # Objectness BCELoss positive_weight
+iou_t: 0.28  # Higher IoU threshold for medical precision
+anchor_t: 4.0  # Anchor-multiple threshold
+fl_gamma: 0.0  # Focal loss gamma (disabled)
+
+# Augmentation parameters - Very conservative for medical images
+hsv_h: 0.008  # Minimal HSV-Hue augmentation
+hsv_s: 0.4  # Reduced HSV-Saturation augmentation
+hsv_v: 0.25  # Reduced HSV-Value augmentation
+degrees: 0.0  # No rotation (preserve medical orientation)
+translate: 0.03  # Minimal translation
+scale: 0.25  # Reduced scale variation
+shear: 0.0  # No shear (preserve anatomical structure)
+perspective: 0.0  # No perspective (preserve medical accuracy)
+flipud: 0.0  # No vertical flip (preserve medical orientation)
+fliplr: 0.25  # Reduced horizontal flip
+mosaic: 0.7  # Reduced mosaic probability
+mixup: 0.0  # No mixup (preserve medical integrity)
+copy_paste: 0.0  # No copy-paste
+
+# Classification loss parameters - Medical classification optimized
+classification_enabled: true  # Enable classification for medical diagnosis
+classification_weight: 0.008  # Very low weight to avoid interference
+classification_schedule: true  # Use progressive classification weight
+classification_warmup: 0.6  # Start classification after 60% of training
+
+# Medical image specific parameters
+auto_augment: 0.0  # Disable auto augmentation
+erasing: 0.0  # Disable random erasing
+crop_fraction: 1.0  # No cropping
+label_smoothing: 0.0  # No label smoothing for medical precision
+
+# Medical diagnosis specific
+medical_confidence_threshold: 0.35  # Higher confidence for medical diagnosis
+medical_iou_threshold: 0.35  # Lower IoU for medical precision
+medical_nms_threshold: 0.4  # Conservative NMS for medical images
+
+# Progressive training schedule
+progressive_training: true
+detection_first: true  # Train detection first, then add classification
+detection_epochs: 0.7  # Train detection for 70% of epochs
+classification_epochs: 0.3  # Add classification for last 30% of epochs 

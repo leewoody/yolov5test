@@ -1,0 +1,41 @@
+# YOLOv5 Medical Image Complete Configuration
+# Combined Detection and Classification for Heart Ultrasound
+
+# Dataset paths
+train: ../Regurgitation-YOLODataset-1new/train/images
+val: ../Regurgitation-YOLODataset-1new/valid/images
+test: ../Regurgitation-YOLODataset-1new/test/images
+
+# Detection classes (4 heart valve regurgitation types)
+nc: 4
+names:
+  - AR    # Aortic Regurgitation
+  - MR    # Mitral Regurgitation  
+  - PR    # Pulmonary Regurgitation
+  - TR    # Tricuspid Regurgitation
+
+# Classification classes (severity levels)
+classification_classes: 4
+classification_names:
+  - Normal      # 正常
+  - Mild        # 輕度
+  - Moderate    # 中度
+  - Severe      # 重度
+
+# Medical image specific settings
+medical_mode: true
+preserve_orientation: true
+anatomical_structure: true
+confidence_threshold: 0.3
+iou_threshold: 0.4
+
+# Data augmentation (conservative for medical images)
+augmentation:
+  rotation: false
+  shear: false
+  perspective: false
+  flip_vertical: false
+  flip_horizontal: 0.3
+  brightness: 0.1
+  contrast: 0.1
+  saturation: 0.1 

@@ -1,5 +1,6 @@
-train: ./train/images
-val: ./valid/images
+train: ../demo/train/images
+val: ../demo/valid/images
+test: ../demo/test/images
 
-nc: 4
-names: ['AR', 'MR', 'PR', 'TR']
+nc: 2
+names: ['ASDType2', 'VSDType2']

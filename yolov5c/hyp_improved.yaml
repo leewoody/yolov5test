@@ -1,0 +1,45 @@
+# YOLOv5 🚀 by Ultralytics, AGPL-3.0 license
+# Improved hyperparameters for YOLOv5 training with minimal classification loss impact
+
+# Optimizer parameters
+lr0: 0.01  # initial learning rate (SGD=1E-2, Adam=1E-3)
+lrf: 0.1  # final OneCycleLR learning rate (lr0 * lrf)
+momentum: 0.937  # SGD momentum/Adam beta1
+weight_decay: 0.0005  # optimizer weight decay
+warmup_epochs: 3.0  # warmup epochs (fractions ok)
+warmup_momentum: 0.8  # warmup initial momentum
+warmup_bias_lr: 0.1  # warmup initial bias lr
+
+# Loss coefficients - OPTIMIZED for detection performance
+box: 0.05  # box loss gain (reduced from default)
+cls: 0.3  # cls loss gain (reduced from default)
+cls_pw: 1.0  # cls BCELoss positive_weight
+obj: 1.0  # obj loss gain (scale with pixels)
+obj_pw: 1.0  # obj BCELoss positive_weight
+iou_t: 0.20  # IoU training threshold
+anchor_t: 4.0  # anchor-multiple threshold
+fl_gamma: 0.0  # focal loss gamma (efficientDet default gamma=1.5)
+
+# Augmentation parameters - CONSERVATIVE for medical images
+hsv_h: 0.015  # image HSV-Hue augmentation (fraction)
+hsv_s: 0.7  # image HSV-Saturation augmentation (fraction)
+hsv_v: 0.4  # image HSV-Value augmentation (fraction)
+degrees: 0.0  # image rotation (+/- deg) (disabled for medical images)
+translate: 0.1  # image translation (+/- fraction) (reduced)
+scale: 0.5  # image scale (+/- gain) (reduced)
+shear: 0.0  # image shear (+/- deg) (disabled for medical images)
+perspective: 0.0  # image perspective (+/- fraction), range 0-0.001 (disabled)
+flipud: 0.0  # image flip up-down (probability) (disabled for medical images)
+fliplr: 0.5  # image flip left-right (probability)
+mosaic: 1.0  # image mosaic (probability)
+mixup: 0.0  # image mixup (probability) (disabled for medical images)
+copy_paste: 0.0  # segment copy-paste (probability) (disabled)
+
+# Classification loss parameters - VERY CONSERVATIVE
+classification_enabled: false  # Disable classification by default
+classification_weight: 0.01  # Extremely low classification weight when enabled
+
+# Other parameters
+auto_augment: 0.0  # auto augmentation policy
+erasing: 0.0  # random erasing (probability)
+crop_fraction: 1.0  # fraction of image cropped (random, center, or any) 

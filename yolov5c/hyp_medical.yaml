@@ -1,0 +1,48 @@
+# YOLOv5 🚀 by Ultralytics, AGPL-3.0 license
+# Optimized hyperparameters for medical image detection (heart ultrasound)
+
+# Optimizer parameters - Conservative for medical images
+lr0: 0.008  # Lower initial learning rate for stability
+lrf: 0.1  # final OneCycleLR learning rate (lr0 * lrf)
+momentum: 0.937  # SGD momentum/Adam beta1
+weight_decay: 0.0005  # optimizer weight decay
+warmup_epochs: 5.0  # Longer warmup for medical images
+warmup_momentum: 0.8  # warmup initial momentum
+warmup_bias_lr: 0.1  # warmup initial bias lr
+
+# Loss coefficients - Optimized for medical detection
+box: 0.04  # Box loss gain (reduced for medical precision)
+cls: 0.25  # Classification loss gain (reduced)
+cls_pw: 1.0  # Classification BCELoss positive_weight
+obj: 1.0  # Objectness loss gain
+obj_pw: 1.0  # Objectness BCELoss positive_weight
+iou_t: 0.25  # Higher IoU threshold for medical precision
+anchor_t: 4.0  # Anchor-multiple threshold
+fl_gamma: 0.0  # Focal loss gamma (disabled)
+
+# Augmentation parameters - Very conservative for medical images
+hsv_h: 0.01  # Minimal HSV-Hue augmentation
+hsv_s: 0.5  # Reduced HSV-Saturation augmentation
+hsv_v: 0.3  # Reduced HSV-Value augmentation
+degrees: 0.0  # No rotation (preserve medical orientation)
+translate: 0.05  # Minimal translation
+scale: 0.3  # Reduced scale variation
+shear: 0.0  # No shear (preserve anatomical structure)
+perspective: 0.0  # No perspective (preserve medical accuracy)
+flipud: 0.0  # No vertical flip (preserve medical orientation)
+fliplr: 0.3  # Reduced horizontal flip
+mosaic: 0.8  # Reduced mosaic probability
+mixup: 0.0  # No mixup (preserve medical integrity)
+copy_paste: 0.0  # No copy-paste
+
+# Classification loss parameters - Disabled by default
+classification_enabled: false  # Disable classification for pure detection
+classification_weight: 0.005  # Extremely low weight if enabled
+
+# Medical image specific parameters
+auto_augment: 0.0  # Disable auto augmentation
+erasing: 0.0  # Disable random erasing
+crop_fraction: 1.0  # No cropping
+
+# Additional medical image considerations
+label_smoothing: 0.0  # No label smoothing for medical precision 

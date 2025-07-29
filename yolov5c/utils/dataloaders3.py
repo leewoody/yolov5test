@@ -6,6 +6,7 @@ Dataloaders and dataset utils
 from pathlib import Path
 import cv2
 from torch.utils.data import Dataset
+import ast
 
 import contextlib
 import glob
@@ -31,7 +32,6 @@ import yaml
 from PIL import ExifTags, Image, ImageOps
 from torch.utils.data import DataLoader, Dataset, dataloader, distributed
 from tqdm import tqdm
-import ast
 
 
 from utils.augmentations import (Albumentations, augment_hsv, classify_albumentations, classify_transforms, copy_paste,
@@ -169,6 +169,20 @@ def create_dataloader(path,
                 img_path = self.img_files[index]
                 img_id = self.get_image_id(img_path)
                 cl_label = self.labelcl.get(img_id, np.array([0], dtype=np.float32))
+                
+                # Handle different classification label formats
+                if isinstance(cl_label, list):
+                    cl_label = np.array(cl_label, dtype=np.float32)
+                elif isinstance(cl_label, str):
+                    # Handle string format (Python list or space-separated)
+                    if cl_label.startswith('[') and cl_label.endswith(']'):
+                        try:
+                            cl_label = np.array(ast.literal_eval(cl_label), dtype=np.float32)
+                        except (ValueError, SyntaxError):
+                            cl_label = np.array(cl_label.split(), dtype=np.float32)
+                    else:
+                        cl_label = np.array(cl_label.split(), dtype=np.float32)
+                
                 cl_label = torch.tensor(cl_label, dtype=torch.float32)
                 return img, label, cl_label
             else:
@@ -622,7 +636,17 @@ class LoadImagesAndLabels(Dataset):
                     lines = f.read().strip().splitlines()
                     if lines:  # Ensure label file is not empty
                         cl_line = lines[-1]  # Last line contains cl
-                        cl = np.array(cl_line.split(), dtype=np.float32)
+                        # Handle both space-separated and Python list formats
+                        if cl_line.startswith('[') and cl_line.endswith(']'):
+                            # Python list format: [0, 0, 1]
+                            try:
+                                cl = np.array(ast.literal_eval(cl_line), dtype=np.float32)
+                            except (ValueError, SyntaxError):
+                                # Fallback to space-separated format
+                                cl = np.array(cl_line.split(), dtype=np.float32)
+                        else:
+                            # Space-separated format: 0 0 1
+                            cl = np.array(cl_line.split(), dtype=np.float32)
                     else:
                         cl = np.zeros((0, 5), dtype=np.float32)  # Empty label
                     cl_cache[lb_file] = cl.tolist()
