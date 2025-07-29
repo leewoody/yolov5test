@@ -348,43 +348,76 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                     elif isinstance(pred, list):
                         detections = pred  # list of detection Tensors
                     else:
-                        detections = pred
+                        detections = pred                    # Print detection shapes for debugging only occasionally
+                    if i == 0 and epoch % 5 == 0:  # Only print once per 5 epochs
+                        if isinstance(detections, list):
+                            for idx, d in enumerate(detections):
+                                LOGGER.info(f"detections[{idx}].shape = {d.shape}")
+                        else:
+                            LOGGER.info(f"detections.shape = {detections.shape}")
 
-                    # Print detection shapes for debugging
-                    if isinstance(detections, list):
-                        for i, d in enumerate(detections):
-                            print(f"detections[{i}].shape = {d.shape}")
-                    else:
-                        print(f"detections.shape = {detections.shape}")
-
-                    if class_outputs is not None:
-                        print(f"class_outputs.shape = {class_outputs.shape}")                    # Compute detection loss
+                        if class_outputs is not None:
+                            LOGGER.info(f"class_outputs.shape = {class_outputs.shape}")# Compute detection loss
                     # Make sure targets is on the same device as detections
                     targets = targets.to(detections[0].device)
                     detection_loss, loss_items = compute_loss(detections, targets)
                     print(f"detection_loss = {detection_loss.item()}")                    # Classification loss if both outputs and labels exist
                     classification_loss = torch.tensor(0.0, device=device)  # Initialize as tensor
                     if class_outputs is not None and classification_labels is not None:
-                        criterion = nn.CrossEntropyLoss()
+                        # Calculate class weights to address class imbalance
+                        if hasattr(dataset, 'labels'):
+                            # Extract all labels from dataset
+                            all_labels = torch.cat([torch.from_numpy(lbl[:, 0]) for lbl in dataset.labels])
+                            # Count occurrences of each class
+                            classes, counts = torch.unique(all_labels, return_counts=True)
+                            # Calculate weights (inverse frequency)
+                            class_weights = 1.0 / counts.float()
+                            # Normalize weights
+                            class_weights = class_weights / class_weights.sum() * len(classes)
+                            # Move weights to device
+                            class_weights = class_weights.to(device)
+                            # Use weighted loss
+                            criterion = nn.CrossEntropyLoss(weight=class_weights)
+                        else:
+                            # Fallback to standard loss if dataset structure is different
+                            criterion = nn.CrossEntropyLoss()
+                            
+                        # Get class indices from one-hot encoded labels
                         label_indices = classification_labels.argmax(dim=1)
+                        
+                        # Apply label smoothing
                         classification_loss = criterion(class_outputs, label_indices)
-                        print(f"classification_loss = {classification_loss.item()}")# Weight the classification loss compared to detection loss
-                    # Get the weight from hyperparameters or use a default
-                    classification_loss_weight = opt.hyp.get('classification_weight', 0.1)  # Lower weight for classification
-                      # If we're in early training, focus more on detection to establish good localization
-                    if epoch < opt.epochs * 0.3:  # First 30% of training
-                        classification_loss_weight *= 0.5  # Reduce classification importance early
+                        
+                        if i % 100 == 0:  # Reduce print frequency to avoid slowdown
+                            print(f"classification_loss = {classification_loss.item()}")# Weight the classification loss compared to detection loss                    # Get the weight from hyperparameters or use a dynamic weighting scheme
+                    classification_loss_weight = opt.hyp.get('classification_weight', 0.5)  # Higher weight for classification
                     
-                    total_loss = detection_loss + classification_loss_weight * classification_loss
-                      # Log the weighted losses for monitoring
+                    # Dynamic loss weighting - gradually increase classification weight
+                    progress = epoch / opt.epochs  # Training progress (0 to 1)
+                    if progress < 0.2:  # First 20% of training
+                        # Start with lower classification weight
+                        dynamic_weight = classification_loss_weight * 0.2
+                    elif progress < 0.5:  # 20%-50% of training
+                        # Linear increase
+                        dynamic_weight = classification_loss_weight * (0.2 + (progress - 0.2) * 2.0)
+                    else:  # Last 50% of training
+                        # Full weight
+                        dynamic_weight = classification_loss_weight
+                    
+                    # Apply loss weighting
+                    total_loss = detection_loss + dynamic_weight * classification_loss
+                    
+                    # Log the weighted losses for monitoring
                     if i % 10 == 0:  # Log every 10 batches
                         LOGGER.info(f"Detection loss: {detection_loss.item():.4f}, "
                                    f"Classification loss: {classification_loss.item():.4f} "
-                                   f"(weight: {classification_loss_weight:.3f})")
-                    
+                                   f"(weight: {dynamic_weight:.3f})")
                     if torch.isnan(total_loss):
                         raise ValueError("NaN loss encountered during training.")
-                    print(f"total_loss = {total_loss.item()}, detection_loss = {detection_loss.item()}, classification_loss = {classification_loss.item()}")
+                    
+                    # Only print loss occasionally to avoid slowing down training
+                    if i % 100 == 0:
+                        LOGGER.info(f"Batch {i}: total_loss = {total_loss.item():.4f}, detection_loss = {detection_loss.item():.4f}, classification_loss = {classification_loss.item():.4f}")
 
                     if RANK != -1:
                         total_loss *= WORLD_SIZE
