@@ -71,7 +71,7 @@ class Detect(nn.Module):
                     wh = (wh.sigmoid() * 2) ** 2 * self.anchor_grid[i]  # wh
                     y = torch.cat((xy, wh, conf.sigmoid(), mask), 4)
                 else:  # Detect (boxes only)
-                    xy, wh, conf = x[i].sigmoid().split((2, 2, self.nc + 1), 4)
+                    xy, wh, conf = x[i].sigmoid().split((2, 2, self.nc), 4)
                     xy = (xy * 2 + self.grid[i]) * self.stride[i]  # xy
                     wh = (wh * 2) ** 2 * self.anchor_grid[i]  # wh
                     y = torch.cat((xy, wh, conf), 4)
@@ -480,6 +480,9 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
                 args[1] = [list(range(args[1] * 2))] * len(f)
             if m is Segment:
                 args[3] = make_divisible(args[3] * gw, 8)
+            # Ensure nc is passed correctly to Detect layer
+            if m is Detect and len(args) > 0:
+                args[0] = nc  # Replace nc with actual number of classes
             c2 = sum(ch[x] for x in f)
         elif m is Contract:
             c2 = ch[f] * args[0]**2
@@ -493,7 +496,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
             num_cls = int(args[0])
             in_channels = int(c1)
             args = [in_channels, num_cls]
-            c2 = num_cls
+            c2 = in_channels  # Don't change the channel count for subsequent layers
         else:
             c2 = c1
 

@@ -40114,3 +40114,6482 @@ This commit message follows conventional commit format and provides a comprehens
 
 ---
 
+_**User**_
+
+不能將 one-hot encoding 分類標籤轉換為單一數字, 需維持原貌
+自動轉換及訓練
+
+---
+
+_**Assistant**_
+
+我理解了！需要保持 one-hot encoding 格式不變，而不是轉換為單一數字。讓我修改轉換工具並自動執行訓練。
+
+
+---
+
+The string to replace was not found in the file.
+
+---
+
+Read file: yolov5c/convert_segmentation_to_bbox.py
+
+---
+
+The string to replace was not found in the file.
+
+---
+
+Read file: yolov5c/convert_segmentation_to_bbox.py
+
+---
+
+<details><summary>Edit file: yolov5c/convert_segmentation_to_bbox.py</summary>
+
+undefined
+
+**Chunk 1**
+Lines added: 5, lines removed: 7
+
+```diff
+@@ -37,14 +37,12 @@
+  
+  def parse_classification_line(line):
+-     """Parse classification line and return the class index"""
++     """Parse classification line and keep original one-hot encoding"""
+      try:
+          parts = line.strip().split()
+-         # Find the index of "1" in the one-hot encoding
+-         for i, val in enumerate(parts):
+-             if val == "1":
+-                 return i
+-         return 0  # Default to 0 if no "1" found
++         # Keep original one-hot encoding format
++         # e.g., "0 1 0" -> "0 1 0", "1 0 0" -> "1 0 0"
++         return " ".join(parts) if parts else "0 0 0"
+      except (ValueError, IndexError):
+-         return 0
++         return "0 0 0"  # Default to [0, 0, 0]
+  
+  def points_to_bbox(points):
+```
+
+</details>
+
+---
+
+現在我需要修改 `train_joint_optimized.py` 來處理 one-hot encoding 格式的分類標籤：
+
+
+---
+
+Read file: yolov5c/train_joint_optimized.py
+
+---
+
+<details><summary>Edit file: yolov5c/train_joint_optimized.py</summary>
+
+undefined
+
+**Chunk 1**
+Lines added: 1, lines removed: 1
+
+```diff
+@@ -146,5 +146,5 @@
+      
+      def extract_classification_labels(self, targets, paths):
+-         """從標籤文件中提取分類標籤"""
++         """從標籤文件中提取分類標籤（one-hot encoding）"""
+          cls_targets = []
+          
+```
+
+**Chunk 2**
+Lines added: 7, lines removed: 5
+
+```diff
+@@ -157,11 +157,13 @@
+                      lines = f.readlines()
+                  
+-                 # 查找分類標籤（最後一行，只有一個數字）
+-                 classification_label = 0  # 默認值
++                 # 查找分類標籤（最後一行，one-hot encoding 格式）
++                 classification_label = [0, 0, 0]  # 默認值 [AR, MR, PR]
+                  for line in lines:
+                      line = line.strip()
+-                     if line and len(line.split()) == 1:
+-                         # 單個數字，應該是分類標籤
+-                         classification_label = int(line)
++                     if line and len(line.split()) > 1:
++                         # 多個數字，應該是 one-hot encoding
++                         parts = line.split()
++                         if len(parts) == 3:  # 確保是 3 個類別
++                             classification_label = [int(x) for x in parts]
+                              break
+                  
+```
+
+**Chunk 3**
+Lines added: 2, lines removed: 2
+
+```diff
+@@ -170,7 +172,7 @@
+              except Exception as e:
+                  print(f"警告: 無法讀取分類標籤 {label_path}: {e}")
+-                 cls_targets.append(0)  # 默認值
++                 cls_targets.append([0, 0, 0])  # 默認值
+          
+-         return torch.tensor(cls_targets, dtype=torch.long, device=self.device)
++         return torch.tensor(cls_targets, dtype=torch.float, device=self.device)
+      
+      def train_epoch(self, epoch):
+```
+
+</details>
+
+---
+
+現在我需要修改分類損失計算，因為現在使用的是 one-hot encoding：
+
+
+---
+
+Read file: yolov5c/train_joint_optimized.py
+
+---
+
+<details><summary>Edit file: yolov5c/train_joint_optimized.py</summary>
+
+undefined
+
+**Chunk 1**
+Lines added: 3, lines removed: 2
+
+```diff
+@@ -205,7 +205,8 @@
+              det_loss, det_loss_items = self.compute_loss(det_pred, targets)
+              
+-             # 計算分類損失
++             # 計算分類損失（one-hot encoding）
+              if cls_pred is not None:
+-                 cls_loss = F.cross_entropy(cls_pred, cls_targets)
++                 # 使用 BCE loss 處理 one-hot encoding
++                 cls_loss = F.binary_cross_entropy_with_logits(cls_pred, cls_targets)
+              else:
+                  cls_loss = torch.tensor(0.0, device=self.device)
+```
+
+</details>
+
+---
+
+<details><summary>Edit file: yolov5c/train_joint_optimized.py</summary>
+
+undefined
+
+**Chunk 1**
+Lines added: 2, lines removed: 1
+
+```diff
+@@ -273,5 +273,6 @@
+                  
+                  if cls_pred is not None:
+-                     cls_loss = F.cross_entropy(cls_pred, cls_targets)
++                     # 使用 BCE loss 處理 one-hot encoding
++                     cls_loss = F.binary_cross_entropy_with_logits(cls_pred, cls_targets)
+                  else:
+                      cls_loss = torch.tensor(0.0, device=self.device)
+```
+
+</details>
+
+---
+
+現在我需要修改模型的分類頭，讓它輸出 3 個類別的 logits：
+
+
+---
+
+Read file: yolov5c/models/common.py
+
+---
+
+Read file: yolov5c/models/common.py
+
+---
+
+現在我需要修改 `YOLOv5WithClassification` 類別，讓它輸出 3 個類別的 logits（不經過 sigmoid）：
+
+
+---
+
+<details><summary>Edit file: yolov5c/models/common.py</summary>
+
+undefined
+
+**Chunk 1**
+Lines added: 1, lines removed: 1
+
+```diff
+@@ -909,5 +909,5 @@
+          x = self.flatten(x)  # Flatten to (batch_size, in_channels)
+          x = self.dropout(x)  # Apply dropout for regularization
+-         x = self.fc(x)  # Fully connected layer
++         x = self.fc(x)  # Fully connected layer (outputs logits for BCE loss)
+          return x
+  
+```
+
+</details>
+
+---
+
+現在讓我創建一個自動轉換和訓練的腳本：
+
+
+---
+
+<details><summary>Edit file: yolov5c/auto_convert_and_train.py</summary>
+
+創建一個自動轉換數據集並執行訓練的腳本
+
+**Chunk 1**
+Lines added: 92, lines removed: 1
+
+```diff
+@@ -1,1 +1,92 @@
+- 
++ #!/usr/bin/env python3
++ """
++ 自動轉換 Regurgitation 數據集並執行聯合訓練
++ 保持 one-hot encoding 格式不變
++ """
++ 
++ import os
++ import shutil
++ import subprocess
++ import sys
++ from pathlib import Path
++ 
++ def run_command(cmd, description):
++     """執行命令並顯示進度"""
++     print(f"\n{'='*50}")
++     print(f"執行: {description}")
++     print(f"命令: {cmd}")
++     print(f"{'='*50}")
++     
++     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
++     
++     if result.returncode == 0:
++         print(f"✅ {description} 成功完成")
++         if result.stdout:
++             print("輸出:", result.stdout[-500:])  # 顯示最後500字符
++     else:
++         print(f"❌ {description} 失敗")
++         print("錯誤:", result.stderr)
++         return False
++     
++     return True
++ 
++ def main():
++     """主函數"""
++     print("🚀 開始自動轉換和訓練流程")
++     
++     # 1. 轉換數據集
++     input_dataset = "Regurgitation-YOLODataset-1new"
++     output_dataset = "regurgitation_converted_onehot"
++     
++     if not os.path.exists(input_dataset):
++         print(f"❌ 找不到輸入數據集: {input_dataset}")
++         return False
++     
++     # 清理舊的轉換結果
++     if os.path.exists(output_dataset):
++         print(f"清理舊的轉換結果: {output_dataset}")
++         shutil.rmtree(output_dataset)
++     
++     # 執行轉換
++     convert_cmd = f"python3 convert_regurgitation_dataset.py \"{input_dataset}\" \"{output_dataset}\""
++     if not run_command(convert_cmd, "轉換數據集"):
++         return False
++     
++     # 2. 檢查轉換結果
++     print("\n📊 檢查轉換結果:")
++     for split in ['train', 'val', 'test']:
++         labels_dir = f"{output_dataset}/{split}/labels"
++         if os.path.exists(labels_dir):
++             label_files = list(Path(labels_dir).glob("*.txt"))
++             print(f"  {split}: {len(label_files)} 個標籤文件")
++             
++             # 檢查前幾個文件的格式
++             if label_files:
++                 sample_file = label_files[0]
++                 with open(sample_file, 'r') as f:
++                     lines = f.readlines()
++                 print(f"    範例格式: {lines[0].strip()} | {lines[1].strip()}")
++     
++     # 3. 執行訓練
++     print("\n🎯 開始聯合訓練")
++     
++     # 設置訓練參數
++     data_yaml = f"{output_dataset}/data.yaml"
++     epochs = 100
++     batch_size = 16
++     imgsz = 640
++     
++     train_cmd = f"python3 train_joint_optimized.py --data {data_yaml} --epochs {epochs} --batch-size {batch_size} --imgsz {imgsz}"
++     
++     if not run_command(train_cmd, "聯合訓練"):
++         return False
++     
++     print("\n🎉 自動轉換和訓練流程完成！")
++     print(f"📁 轉換後的數據集: {output_dataset}")
++     print(f"📊 訓練結果保存在: runs/train/")
++     
++     return True
++ 
++ if __name__ == "__main__":
++     success = main()
++     sys.exit(0 if success else 1) 
+```
+
+</details>
+
+---
+
+現在我需要修改 `train_joint_optimized.py` 來支援命令行參數：
+
+
+---
+
+Read file: yolov5c/train_joint_optimized.py
+
+---
+
+<details><summary>Edit file: yolov5c/train_joint_optimized.py</summary>
+
+undefined
+
+**Chunk 1**
+Lines added: 18, lines removed: 2
+
+```diff
+@@ -315,6 +315,22 @@
+  
+  if __name__ == "__main__":
+-     data_yaml = "../regurgitation_joint_20250730/data.yaml"
+-     trainer = JointTrainer(data_yaml)
++     import argparse
++     
++     parser = argparse.ArgumentParser(description="Joint Detection and Classification Training")
++     parser.add_argument("--data", type=str, required=True, help="Path to data.yaml file")
++     parser.add_argument("--weights", type=str, default="yolov5s.pt", help="Initial weights path")
++     parser.add_argument("--epochs", type=int, default=100, help="Number of epochs")
++     parser.add_argument("--batch-size", type=int, default=16, help="Batch size")
++     parser.add_argument("--imgsz", type=int, default=640, help="Image size")
++     
++     args = parser.parse_args()
++     
++     trainer = JointTrainer(
++         data_yaml=args.data,
++         weights=args.weights,
++         epochs=args.epochs,
++         batch_size=args.batch_size,
++         imgsz=args.imgsz
++     )
+      trainer.train()
+  
+```
+
+</details>
+
+---
+
+現在讓我們執行自動轉換和訓練：
+
+
+---
+
+```bash
+cd .. && python3 yolov5c/auto_convert_and_train.py
+```
+
+```
+🚀 開始自動轉換和訓練流程
+
+==================================================
+執行: 轉換數據集
+命令: python3 convert_regurgitation_dataset.py "Regurgitation-YOLODataset-1new" "regurgitation_converted_one
+hot"
+==================================================
+❌ 轉換數據集 失敗
+錯誤: /Applications/Xcode.app/Contents/Developer/usr/bin/python3: can't open file '/Users/mac/_codes/_Github
+/yolov5test/convert_regurgitation_dataset.py': [Errno 2] No such file or directory
+
+
+```
+
+---
+
+我需要修正路徑問題：
+
+
+---
+
+<details><summary>Edit file: yolov5c/auto_convert_and_train.py</summary>
+
+undefined
+
+**Chunk 1**
+Lines added: 1, lines removed: 1
+
+```diff
+@@ -49,5 +49,5 @@
+      
+      # 執行轉換
+-     convert_cmd = f"python3 convert_regurgitation_dataset.py \"{input_dataset}\" \"{output_dataset}\""
++     convert_cmd = f"python3 yolov5c/convert_regurgitation_dataset.py \"{input_dataset}\" \"{output_dataset}\""
+      if not run_command(convert_cmd, "轉換數據集"):
+          return False
+```
+
+</details>
+
+---
+
+<details><summary>Edit file: yolov5c/auto_convert_and_train.py</summary>
+
+undefined
+
+**Chunk 1**
+Lines added: 1, lines removed: 1
+
+```diff
+@@ -77,5 +77,5 @@
+      imgsz = 640
+      
+-     train_cmd = f"python3 train_joint_optimized.py --data {data_yaml} --epochs {epochs} --batch-size {batch_size} --imgsz {imgsz}"
++     train_cmd = f"python3 yolov5c/train_joint_optimized.py --data {data_yaml} --epochs {epochs} --batch-size {batch_size} --imgsz {imgsz}"
+      
+      if not run_command(train_cmd, "聯合訓練"):
+```
+
+</details>
+
+---
+
+現在讓我們重新執行：
+
+
+---
+
+```bash
+python3 yolov5c/auto_convert_and_train.py
+```
+
+```
+🚀 開始自動轉換和訓練流程
+
+==================================================
+執行: 轉換數據集
+命令: python3 yolov5c/convert_regurgitation_dataset.py "Regurgitation-YOLODataset-1new" "regurgitation_conve
+rted_onehot"
+==================================================
+✅ 轉換數據集 成功完成
+輸出: urgitation_converted_onehot/train/images
+Warning: Regurgitation-YOLODataset-1new/val does not exist, skipping
+
+Processing test split...
+Found 306 label files
+Conversion completed:
+  Success: 306
+  Errors: 0
+Copying 306 images from Regurgitation-YOLODataset-1new/test/images to regurgitation_converted_onehot/test/im
+ages
+Created data.yaml at regurgitation_converted_onehot/data.yaml
+
+Dataset conversion completed!
+Output directory: regurgitation_converted_onehot
+Class names: ['AR', 'MR', 'PR', 'TR']
+
+
+📊 檢查轉換結果:
+  train: 1040 個標籤文件
+    範例格式: 3 0.471768 0.532516 0.115024 0.152709 | 0 0 0
+  val: 0 個標籤文件
+  test: 306 個標籤文件
+    範例格式: 3 0.351116 0.626689 0.175204 0.287162 | 0 0 0
+
+🎯 開始聯合訓練
+
+==================================================
+執行: 聯合訓練
+命令: python3 yolov5c/train_joint_optimized.py --data regurgitation_converted_onehot/data.yaml --epochs 100 
+--batch-size 16 --imgsz 640
+==================================================
+❌ 聯合訓練 失敗
+錯誤: /Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urll
+ib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: http
+s://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+YOLOv5 🚀 2025-7-29 Python-3.9.6 torch-2.7.1 CPU
+
+Traceback (most recent call last):
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/train_joint_optimized.py", line 328, in <module>
+    trainer = JointTrainer(
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/train_joint_optimized.py", line 39, in __init__
+    self.model = self.create_model()
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/train_joint_optimized.py", line 65, in create_model
+    model = Model('models/yolov5sc.yaml', ch=3, nc=self.nc)
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/models/yolo.py", line 203, in __init__
+    with open(cfg, encoding='ascii', errors='ignore') as f:
+FileNotFoundError: [Errno 2] No such file or directory: 'models/yolov5sc.yaml'
+
+
+```
+
+---
+
+我需要修正模型路徑問題：
+
+
+---
+
+<details><summary>Edit file: yolov5c/train_joint_optimized.py</summary>
+
+undefined
+
+**Chunk 1**
+Lines added: 1, lines removed: 1
+
+```diff
+@@ -63,5 +63,5 @@
+          """創建支援 joint detection + classification 的模型"""
+          # 使用自定義配置
+-         model = Model('models/yolov5sc.yaml', ch=3, nc=self.nc)
++         model = Model('yolov5c/models/yolov5sc.yaml', ch=3, nc=self.nc)
+          
+          # 載入預訓練權重（過濾不相容的層）
+```
+
+</details>
+
+---
+
+現在讓我們重新執行：
+
+
+---
+
+```bash
+python3 yolov5c/auto_convert_and_train.py
+```
+
+```
+
+
+Kc-unnamed_1_2.mp4-23.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/a2lrwqduZ
+s
+Kc-unnamed_1_2.mp4-24.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/a2lrwqduZ
+s
+Kc-unnamed_1_2.mp4-25.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/a2lrwqduZ
+s
+Kc-unnamed_1_2.mp4-26.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/a2lrwqduZ
+s
+Kc-unnamed_1_2.mp4-27.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/a2lrwqduZ
+s
+Kc-unnamed_1_2.mp4-28.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/a2lrwqduZ
+s
+Kc-unnamed_1_2.mp4-30.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/a2lrwqduZ
+s
+Kc-unnamed_1_2.mp4-31.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/a2lrwqduZ
+s
+Kc-unnamed_1_2.mp4-4.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/a2lrwqduZ
+s
+Kc-unnamed_1_2.mp4-5.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/a2lrwqduZ
+s
+Kc-unnamed_1_2.mp4-7.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/a2lrwqduZ
+s
+Kc-unnamed_1_2.mp4-8.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/a2lrwqduZ
+s
+Kc-unnamed_1_2.mp4-9.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_1.mp4-34.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_1.mp4-4.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_1.mp4-44.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_1.mp4-45.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_1.mp4-6.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_2.mp4-29.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_2.mp4-30.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_2.mp4-53.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_5.mp4-17.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_5.mp4-18.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_5.mp4-21.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_5.mp4-22.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_5.mp4-30.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_5.mp4-31.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_5.mp4-32.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_5.mp4-33.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_5.mp4-41.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_5.mp4-43.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_6.mp4-1.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_6.mp4-15.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_6.mp4-16.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_6.mp4-2.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_6.mp4-3.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_6.mp4-33.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_6.mp4-34.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_6.mp4-35.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_6.mp4-36.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_6.mp4-39.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_6.mp4-41.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_6.mp4-45.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_6.mp4-46.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_6.mp4-47.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_6.mp4-48.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_6.mp4-49.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_6.mp4-50.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_6.mp4-55.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_6.mp4-56.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_6.mp4-8.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_7.mp4-0.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_7.mp4-1.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_7.mp4-13.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_7.mp4-16.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_7.mp4-18.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_7.mp4-26.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_7.mp4-27.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_7.mp4-28.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_7.mp4-29.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_7.mp4-30.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_7.mp4-31.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_7.mp4-38.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_7.mp4-39.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_7.mp4-40.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdjwqtqa
+8
+Kb-unnamed_1_7.mp4-53.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdlwqpma
+m
+k=-unnamed_1_1.mp4-1.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdlwqpma
+m
+k=-unnamed_1_1.mp4-10.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdlwqpma
+m
+k=-unnamed_1_1.mp4-11.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdlwqpma
+m
+k=-unnamed_1_1.mp4-5.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdlwqpma
+m
+k=-unnamed_1_3.mp4-1.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdlwqpma
+m
+k=-unnamed_1_3.mp4-2.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdlwqpma
+m
+k=-unnamed_1_3.mp4-3.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aGdlwqpma
+m
+k=-unnamed_1_3.mp4-6.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWRqwqtta
+M
+KT-unnamed_1_1.mp4-2.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWRqwqtta
+M
+KT-unnamed_1_1.mp4-3.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWRqwqtta
+M
+KT-unnamed_1_1.mp4-4.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWRqwqtta
+M
+KT-unnamed_1_1.mp4-6.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWRqwqtta
+M
+KT-unnamed_1_1.mp4-9.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWRqwqtta
+M
+KT-unnamed_1_2.mp4-1.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWRqwqtta
+M
+KT-unnamed_1_2.mp4-2.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWRqwqtta
+M
+KT-unnamed_1_2.mp4-22.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWRqwqtta
+M
+KT-unnamed_1_2.mp4-23.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWRqwqtta
+M
+KT-unnamed_1_2.mp4-25.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWRqwqtta
+M
+KT-unnamed_1_2.mp4-3.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWRqwqtta
+M
+KT-unnamed_1_2.mp4-35.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWRqwqtta
+M
+KT-unnamed_1_2.mp4-37.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWRqwqtta
+M
+KT-unnamed_1_2.mp4-38.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWRqwqtta
+M
+KT-unnamed_1_2.mp4-39.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWRqwqtta
+M
+KT-unnamed_1_2.mp4-4.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWRqwqtta
+M
+KT-unnamed_1_2.mp4-40.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWRqwqtta
+M
+KT-unnamed_1_2.mp4-41.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWRqwqtta
+M
+KT-unnamed_1_2.mp4-42.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWRqwqtta
+M
+KT-unnamed_1_2.mp4-43.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWRqwqtta
+M
+KT-unnamed_1_2.mp4-5.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWRqwqtta
+M
+KT-unnamed_1_2.mp4-52.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWRqwqtta
+M
+KT-unnamed_1_2.mp4-53.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWRqwqtta
+M
+KT-unnamed_1_2.mp4-54.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWRqwqtta
+M
+KT-unnamed_1_2.mp4-6.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWRqwqtta
+M
+KT-unnamed_1_2.mp4-7.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWRqwqtta
+M
+KT-unnamed_1_2.mp4-9.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWZiwqxuY
+2
+0=-unnamed_1_3.mp4-16.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWZiwqxuY
+2
+0=-unnamed_1_3.mp4-5.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWdjwqVsZ
+8
+KZ-unnamed_1_3.mp4-10.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWdjwqVsZ
+8
+KZ-unnamed_1_3.mp4-11.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWdjwqVsZ
+8
+KZ-unnamed_1_3.mp4-15.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWdjwqVsZ
+8
+KZ-unnamed_1_3.mp4-16.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWdjwqVsZ
+8
+KZ-unnamed_1_3.mp4-17.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWdjwqVsZ
+8
+KZ-unnamed_1_3.mp4-2.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWdjwqVsZ
+8
+KZ-unnamed_1_3.mp4-4.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/aWdjwqVsZ
+8
+KZ-unnamed_1_3.mp4-6.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqhra
+c
+KX-unnamed_2_1.mp4-13.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqhra
+c
+KX-unnamed_2_1.mp4-14.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqhra
+c
+KX-unnamed_2_1.mp4-15.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqhra
+c
+KX-unnamed_2_1.mp4-16.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqhra
+c
+KX-unnamed_2_1.mp4-21.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqhra
+c
+KX-unnamed_2_1.mp4-29.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqhra
+c
+KX-unnamed_2_1.mp4-3.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqhra
+c
+KX-unnamed_2_1.mp4-32.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqhra
+c
+KX-unnamed_2_1.mp4-4.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqhra
+c
+KX-unnamed_2_1.mp4-41.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqhra
+c
+KX-unnamed_2_1.mp4-42.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+W
+c=-unnamed_1_1.mp4-4.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+W
+c=-unnamed_1_1.mp4-7.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_1_1.mp4-29.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_1_1.mp4-30.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_1_1.mp4-41.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_1_1.mp4-46.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_1_1.mp4-47.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_1_1.mp4-48.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_1_1.mp4-49.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_1_1.mp4-54.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_1_1.mp4-55.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_1_1.mp4-61.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_1_3.mp4-22.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_1_3.mp4-30.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_1_3.mp4-36.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_1_3.mp4-39.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_2_1.mp4-6.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_2_2.mp4-12.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_2_2.mp4-13.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_2_2.mp4-14.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_2_5.mp4-1.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_2_5.mp4-2.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_2_5.mp4-20.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_2_5.mp4-21.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_2_5.mp4-29.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_2_5.mp4-3.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_2_5.mp4-30.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_2_5.mp4-31.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_2_5.mp4-32.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_2_5.mp4-34.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_2_5.mp4-35.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_2_5.mp4-5.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amZlwqpna
+c
+KV-unnamed_2_5.mp4-6.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_1.mp4-17.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_1.mp4-33.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_1.mp4-43.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_1.mp4-48.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_10.mp4-2.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_10.mp4-25.png: ignoring corrupt image/label: setting an array element with a sequence. The requ
+ested array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_11.mp4-18.png: ignoring corrupt image/label: setting an array element with a sequence. The requ
+ested array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_11.mp4-33.png: ignoring corrupt image/label: setting an array element with a sequence. The requ
+ested array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_11.mp4-35.png: ignoring corrupt image/label: setting an array element with a sequence. The requ
+ested array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_12.mp4-17.png: ignoring corrupt image/label: setting an array element with a sequence. The requ
+ested array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_12.mp4-48.png: ignoring corrupt image/label: setting an array element with a sequence. The requ
+ested array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_16.mp4-15.png: ignoring corrupt image/label: setting an array element with a sequence. The requ
+ested array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_2.mp4-2.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_2.mp4-25.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_2.mp4-33.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_2.mp4-36.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_3.mp4-2.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_3.mp4-25.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_3.mp4-28.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_3.mp4-40.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_4.mp4-10.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_4.mp4-17.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_4.mp4-28.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_4.mp4-32.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_4.mp4-48.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_5.mp4-11.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_5.mp4-26.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_5.mp4-27.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_5.mp4-3.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_8.mp4-1.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_8.mp4-24.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_8.mp4-39.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_8.mp4-9.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amllwqdpb
+G
+o=-unnamed_1_9.mp4-18.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/ampiwqtnY
+8
+Ka-unnamed_2_1.mp4-13.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/ampiwqtnY
+8
+Ka-unnamed_2_1.mp4-14.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/ampiwqtnY
+8
+Ka-unnamed_2_1.mp4-33.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/ampiwqtnY
+8
+Ka-unnamed_2_1.mp4-34.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/ampiwqtnY
+8
+Ka-unnamed_2_1.mp4-52.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/ampiwqtnY
+8
+Ka-unnamed_2_1.mp4-54.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/ampiwqtnY
+8
+Ka-unnamed_2_1.mp4-55.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amtowq1oa
+2
+c=-unnamed_1_1.mp4-10.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amtowq1oa
+2
+c=-unnamed_1_1.mp4-2.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amtowq1oa
+2
+c=-unnamed_1_1.mp4-9.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amtowq1oa
+2
+c=-unnamed_1_2.mp4-1.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amtowq1oa
+2
+c=-unnamed_1_2.mp4-10.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amtowq1oa
+2
+c=-unnamed_1_3.mp4-1.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amtowq1oa
+2
+c=-unnamed_1_3.mp4-10.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/amtowq1oa
+2
+c=-unnamed_1_3.mp4-11.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bGVqwqxtY
+8
+KU-unnamed_1_2.mp4-1.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bGVqwqxtY
+8
+KU-unnamed_1_2.mp4-25.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bGVqwqxtY
+8
+KU-unnamed_1_2.mp4-27.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bGhlwq1qb
+M
+KV-unnamed_1_2.mp4-11.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bGhlwq1qb
+M
+KV-unnamed_1_2.mp4-12.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bGhlwq1qb
+M
+KV-unnamed_1_2.mp4-18.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bGhlwq1qb
+M
+KV-unnamed_1_2.mp4-21.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bGhlwq1qb
+M
+KV-unnamed_1_2.mp4-25.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bGhlwq1qb
+M
+KV-unnamed_1_2.mp4-33.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bGhlwq1qb
+M
+KV-unnamed_1_2.mp4-34.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bGhlwq1qb
+M
+KV-unnamed_1_2.mp4-35.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bGhlwq1qb
+M
+KV-unnamed_1_2.mp4-38.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bGhlwq1qb
+M
+KV-unnamed_1_2.mp4-39.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bGhlwq1qb
+M
+KV-unnamed_1_2.mp4-47.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bGhlwq1qb
+M
+KV-unnamed_1_2.mp4-49.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bGhlwq1qb
+M
+KV-unnamed_1_2.mp4-52.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bGhlwq1qb
+M
+KV-unnamed_1_2.mp4-54.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bGhlwq1qb
+M
+KV-unnamed_1_2.mp4-55.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bGhlwq1qb
+M
+KV-unnamed_1_2.mp4-62.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bGhlwq1qb
+M
+KV-unnamed_1_2.mp4-63.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bGllwq5sZ
+m
+0=-unnamed_1_1.mp4-10.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bGllwq5sZ
+m
+0=-unnamed_1_1.mp4-13.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bGllwq5sZ
+m
+0=-unnamed_1_1.mp4-16.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bGllwq5sZ
+m
+0=-unnamed_1_1.mp4-17.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bGllwq5sZ
+m
+0=-unnamed_1_1.mp4-3.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bGllwq5sZ
+m
+0=-unnamed_1_1.mp4-4.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWNmwq5sb
+G
+k=-unnamed_1_1.mp4-2.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWNmwq5sb
+G
+k=-unnamed_1_1.mp4-7.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_1.mp4-1.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_1.mp4-13.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_1.mp4-2.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_1.mp4-28.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_1.mp4-3.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_1.mp4-32(1).png: ignoring corrupt image/label: setting an array element with a sequence. The re
+quested array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous par
+t.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_1.mp4-33(1).png: ignoring corrupt image/label: setting an array element with a sequence. The re
+quested array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous par
+t.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_1.mp4-39.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_2.mp4-21.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_2.mp4-8.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_3.mp4-12.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_3.mp4-13.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_3.mp4-14.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_3.mp4-15.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_3.mp4-2.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_3.mp4-24.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_3.mp4-25.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_3.mp4-26.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_3.mp4-35.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_3.mp4-38.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_3.mp4-4.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_4.mp4-0.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_4.mp4-1.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_4.mp4-15.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_4.mp4-17.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_4.mp4-2.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_4.mp4-25.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_4.mp4-31.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_4.mp4-4.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_1.mp4-10.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_1.mp4-12.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_1.mp4-14.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_1.mp4-15.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_1.mp4-16.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_1.mp4-2.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_1.mp4-20.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_1.mp4-22.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_1.mp4-23.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_1.mp4-24.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_1.mp4-26.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_1.mp4-28.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_1.mp4-51.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_1.mp4-8.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_2.mp4-0.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_2.mp4-1.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_2.mp4-11.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_2.mp4-12.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_2.mp4-20.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_2.mp4-23.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_2.mp4-24.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_2.mp4-34.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_2.mp4-35.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_2.mp4-46.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_2.mp4-47.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-0.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-1.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-10.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-11.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-12.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-13.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-14.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-15.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-16.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-17.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-19.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-2.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-21.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-22.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-23.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-24.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-25.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-27.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-29.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-3.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-30.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-31.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-32.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-33.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-35.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-39.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-40.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-41.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-42.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-43.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-44.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-47.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-48.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-49.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-5.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: New cache created: /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels.c
+ache
+train: All labels empty in /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels.
+cache, but continuing with auto-generated bboxes
+Traceback (most recent call last):
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/dataloaders.py", line 482, in __init__
+    assert self.im_files, f'{prefix}No images found'
+AssertionError: val: No images found
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/train_joint_optimized.py", line 328, in <module>
+    trainer = JointTrainer(
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/train_joint_optimized.py", line 45, in __init__
+    self.train_loader, self.val_loader = self.create_dataloaders()
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/train_joint_optimized.py", line 132, in create_dataload
+ers
+    val_loader = create_dataloader(
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/dataloaders.py", line 125, in create_dataloader
+    dataset = LoadImagesAndLabels(
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/dataloaders.py", line 484, in __init__
+    raise Exception(f'{prefix}Error loading data from {path}: {e}\n{HELP_URL}') from e
+Exception: val: Error loading data from /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/
+val/images: val: No images found
+See https://docs.ultralytics.com/yolov5/tutorials/train_custom_data
+Error in atexit._run_exitfuncs:
+Traceback (most recent call last):
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/pyt
+hon3.9/multiprocessing/popen_fork.py", line 27, in poll
+    pid, sts = os.waitpid(self.pid, flag)
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/torch/utils/data/_utils/signal_handling.py", 
+line 73, in handler
+    _error_if_any_worker_fails()
+RuntimeError: DataLoader worker (pid 57711) is killed by signal: Terminated: 15. 
+
+
+```
+
+---
+
+我看到問題了！轉換過程中沒有處理 `val` 目錄，因為原始數據集中沒有 `val` 目錄。讓我修正轉換腳本：
+
+
+---
+
+Read file: yolov5c/convert_regurgitation_dataset.py
+
+---
+
+我需要修改轉換腳本，讓它從 `train` 目錄中分割出一部分作為 `val` 目錄：
+
+
+---
+
+<details><summary>Edit file: yolov5c/convert_regurgitation_dataset.py</summary>
+
+undefined
+
+**Chunk 1**
+Lines added: 2, lines removed: 2
+
+```diff
+@@ -42,6 +42,6 @@
+      class_names = ['AR', 'MR', 'PR', 'TR']
+      
+-     # Convert each split
+-     for split in ['train', 'val', 'test']:
++     # Convert train and test splits
++     for split in ['train', 'test']:
+          input_split_path = input_path / split
+          output_split_path = output_path / split
+```
+
+**Chunk 2**
+Lines added: 32, lines removed: undefined
+
+```diff
+@@ -71,4 +71,36 @@
+                  shutil.copy2(img_file, output_images_dir / img_file.name)
+      
++     # Create validation set from train set (20% split)
++     train_images_dir = output_path / 'train' / 'images'
++     train_labels_dir = output_path / 'train' / 'labels'
++     val_images_dir = output_path / 'val' / 'images'
++     val_labels_dir = output_path / 'val' / 'labels'
++     
++     if train_images_dir.exists():
++         import random
++         
++         # Get all train files
++         train_image_files = list(train_images_dir.glob("*"))
++         random.shuffle(train_image_files)
++         
++         # Split 20% for validation
++         val_count = int(len(train_image_files) * 0.2)
++         val_files = train_image_files[:val_count]
++         
++         print(f"\nCreating validation set from train set...")
++         print(f"Moving {len(val_files)} files to validation set")
++         
++         for img_file in val_files:
++             # Move image
++             shutil.move(str(img_file), str(val_images_dir / img_file.name))
++             
++             # Move corresponding label
++             label_file = train_labels_dir / (img_file.stem + '.txt')
++             if label_file.exists():
++                 shutil.move(str(label_file), str(val_labels_dir / label_file.name))
++         
++         print(f"Train set: {len(train_images_dir.glob('*'))} images")
++         print(f"Validation set: {len(val_images_dir.glob('*'))} images")
++     
+      # Create data.yaml
+      create_data_yaml(output_dir, class_names)
+```
+
+</details>
+
+---
+
+現在讓我們重新執行自動轉換和訓練：
+
+
+---
+
+```bash
+python3 yolov5c/auto_convert_and_train.py
+```
+
+```
+🚀 開始自動轉換和訓練流程
+清理舊的轉換結果: regurgitation_converted_onehot
+
+==================================================
+執行: 轉換數據集
+命令: python3 yolov5c/convert_regurgitation_dataset.py "Regurgitation-YOLODataset-1new" "regurgitation_conve
+rted_onehot"
+==================================================
+❌ 轉換數據集 失敗
+錯誤: Traceback (most recent call last):
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/convert_regurgitation_dataset.py", line 129, in <module
+>
+    main() 
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/convert_regurgitation_dataset.py", line 126, in main
+    convert_regurgitation_dataset(args.input_dir, args.output_dir)
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/convert_regurgitation_dataset.py", line 102, in convert
+_regurgitation_dataset
+    print(f"Train set: {len(train_images_dir.glob('*'))} images")
+TypeError: object of type 'generator' has no len()
+
+
+```
+
+---
+
+我需要修正這個錯誤：
+
+
+---
+
+<details><summary>Edit file: yolov5c/convert_regurgitation_dataset.py</summary>
+
+undefined
+
+**Chunk 1**
+Lines added: 2, lines removed: 2
+
+```diff
+@@ -100,6 +100,6 @@
+                  shutil.move(str(label_file), str(val_labels_dir / label_file.name))
+          
+-         print(f"Train set: {len(train_images_dir.glob('*'))} images")
+-         print(f"Validation set: {len(val_images_dir.glob('*'))} images")
++         print(f"Train set: {len(list(train_images_dir.glob('*')))} images")
++         print(f"Validation set: {len(list(val_images_dir.glob('*')))} images")
+      
+      # Create data.yaml
+```
+
+</details>
+
+---
+
+現在讓我們重新執行：
+
+
+---
+
+```bash
+python3 yolov5c/auto_convert_and_train.py
+```
+
+```
+
+
+0=-unnamed_1_1.mp4-10.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bGllwq5sZ
+m
+0=-unnamed_1_1.mp4-13.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bGllwq5sZ
+m
+0=-unnamed_1_1.mp4-16.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bGllwq5sZ
+m
+0=-unnamed_1_1.mp4-17.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bGllwq5sZ
+m
+0=-unnamed_1_1.mp4-4.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWNmwq5sb
+G
+k=-unnamed_1_1.mp4-7.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_1.mp4-1.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_1.mp4-13.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_1.mp4-2.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_1.mp4-28.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_1.mp4-32(1).png: ignoring corrupt image/label: setting an array element with a sequence. The re
+quested array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous par
+t.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_1.mp4-33(1).png: ignoring corrupt image/label: setting an array element with a sequence. The re
+quested array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous par
+t.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_1.mp4-39.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_2.mp4-21.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_2.mp4-8.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_3.mp4-12.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_3.mp4-13.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_3.mp4-14.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_3.mp4-2.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_3.mp4-25.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_3.mp4-35.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_3.mp4-38.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_3.mp4-4.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_4.mp4-0.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_4.mp4-15.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_4.mp4-17.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_4.mp4-2.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_4.mp4-25.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bWplwqlsa
+M
+KZ-unnamed_1_4.mp4-4.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_1.mp4-10.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_1.mp4-12.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_1.mp4-14.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_1.mp4-15.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_1.mp4-16.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_1.mp4-2.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_1.mp4-20.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_1.mp4-22.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_1.mp4-23.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_1.mp4-24.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_1.mp4-26.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_1.mp4-28.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_1.mp4-51.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_1.mp4-8.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_2.mp4-0.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_2.mp4-1.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_2.mp4-12.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_2.mp4-20.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_2.mp4-23.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_2.mp4-24.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_2.mp4-35.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_2.mp4-46.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_2.mp4-47.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-1.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-10.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-11.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-12.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-14.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-15.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-16.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-19.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-2.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-21.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-22.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-23.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-24.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-25.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-27.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-29.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-3.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-31.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-32.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-33.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-39.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-40.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-41.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-42.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-43.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-44.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-47.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-48.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/images/bmRlwqVua
+c
+KY-unnamed_1_3.mp4-49.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+train: New cache created: /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels.c
+ache
+train: All labels empty in /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels.
+cache, but continuing with auto-generated bboxes
+
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels...:   0%|
+
+    | 0/208 [00:00<?, ?it/s]/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: N
+otOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'Libr
+eSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 1 images, 0 
+backgrounds, 1 corrupt:   0%|          | 1/208 [00:08<28:36,  8.29s/it]
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 44 images, 0
+ backgrounds, 44 corrupt:  21%|██        | 44/208 [00:08<00:22,  7.40it/s]
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 87 images, 0
+ backgrounds, 87 corrupt:  42%|████▏     | 87/208 [00:08<00:06, 17.37it/s]
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 125 images, 
+0 backgrounds, 125 corrupt:  60%|██████    | 125/208 [00:08<00:02, 29.19it/s]
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 208 images, 
+0 backgrounds, 208 corrupt: 100%|██████████| 208/208 [00:08<00:00, 24.02it/s]
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Z2liwqVnacKV-
+u
+nnamed_1_1.mp4-16.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Z2liwqVnacKV-
+u
+nnamed_1_1.mp4-17.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmNkwqloa8KTw
+p
+8=-unnamed_1_1.mp4-2.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmNkwqloa8KTw
+p
+8=-unnamed_1_1.mp4-28.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmNkwqloa8KTw
+p
+8=-unnamed_1_1.mp4-30.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmNkwqloa8KTw
+p
+8=-unnamed_1_1.mp4-4.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmNlwq5mZcKcw
+p
+s=-unnamed_1_1.mp4-1.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmNlwq5mZcKcw
+p
+s=-unnamed_1_1.mp4-13.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmNlwq5mZcKcw
+p
+s=-unnamed_1_1.mp4-50.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmNmwq5saG5m-
+u
+nnamed_1_4.mp4-1.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmRnwqZla8Kcw
+p
+4=-unnamed_2_3.mp4-11.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmRnwqZla8Kcw
+p
+4=-unnamed_2_3.mp4-2.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmRnwqZla8Kcw
+p
+4=-unnamed_2_5.mp4-17.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmRpwq1rZGtp-
+u
+nnamed_1_2.mp4-67.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmVkwqZmY8KXw
+p
+c=-unnamed_2_4.mp4-23.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmVkwqZmY8KXw
+p
+c=-unnamed_2_4.mp4-3.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmVlwqVnbGhk-
+u
+nnamed_1_1.mp4-0.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmVlwqhuZ2Zl-
+u
+nnamed_1_8.mp4-53.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmVpwqlobMKaw
+p
+s=-unnamed_2_3.mp4-13.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmVpwqlobMKaw
+p
+s=-unnamed_2_3.mp4-17.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmVpwqlobMKaw
+p
+s=-unnamed_2_3.mp4-2.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmVpwqlobMKaw
+p
+s=-unnamed_2_3.mp4-23.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmVpwqlobMKaw
+p
+s=-unnamed_2_3.mp4-6.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmVrwqtpbMKaw
+p
+w=-unnamed_1_2.mp4-38.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmVrwqtpbMKaw
+p
+w=-unnamed_1_2.mp4-40.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmVrwqtpbMKaw
+p
+w=-unnamed_1_2.mp4-41.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmVrwqtpbMKaw
+p
+w=-unnamed_1_2.mp4-52.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmVrwqtpbMKaw
+p
+w=-unnamed_1_2.mp4-58.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZiwqZua8Kaw
+q
+A=-unnamed_1_1.mp4-13.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZiwqZua8Kaw
+q
+A=-unnamed_1_1.mp4-22.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZiwqZua8Kaw
+q
+A=-unnamed_1_1.mp4-23.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZiwqZua8Kaw
+q
+A=-unnamed_1_1.mp4-27.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZiwqZua8Kaw
+q
+A=-unnamed_1_1.mp4-4.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZiwqZua8Kaw
+q
+A=-unnamed_1_1.mp4-44.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZiwqZua8Kaw
+q
+A=-unnamed_1_1.mp4-50.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZiwqZua8Kaw
+q
+A=-unnamed_1_2.mp4-12.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZiwqZua8Kaw
+q
+A=-unnamed_1_2.mp4-26.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZiwqZua8Kaw
+q
+A=-unnamed_1_2.mp4-45.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZiwqZua8Kaw
+q
+A=-unnamed_1_2.mp4-47.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZiwqhlaWdq-
+u
+nnamed_1_2.mp4-42.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZiwqhlaWdq-
+u
+nnamed_1_3.mp4-32.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZnwqlqbMKaw
+p
+0=-unnamed_1_2.mp4-23.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZnwqlqbMKaw
+p
+0=-unnamed_1_2.mp4-40.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZnwqlqbMKaw
+p
+0=-unnamed_1_2.mp4-9.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZnwqlqbMKaw
+p
+0=-unnamed_1_3.mp4-1.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZnwqlqbMKaw
+p
+0=-unnamed_1_3.mp4-31.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZnwqlqbMKaw
+p
+0=-unnamed_1_3.mp4-34.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZnwqlqbMKaw
+p
+0=-unnamed_1_4.mp4-14.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZnwqlqbMKaw
+p
+0=-unnamed_1_4.mp4-39.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZnwqlqbMKaw
+p
+0=-unnamed_1_4.mp4-7.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZnwqlqbMKaw
+p
+0=-unnamed_1_4.mp4-8.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZnwqlqbMKaw
+p
+0=-unnamed_1_5.mp4-1.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZnwqlqbMKaw
+p
+0=-unnamed_1_5.mp4-12.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZnwqlqbMKaw
+p
+0=-unnamed_1_5.mp4-16.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZnwqlqbMKaw
+p
+0=-unnamed_1_5.mp4-24.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZnwqlqbMKaw
+p
+0=-unnamed_1_5.mp4-38.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZnwqlqbMKaw
+p
+0=-unnamed_1_5.mp4-6.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZnwqlqbMKaw
+p
+0=-unnamed_2_1.mp4-3.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZnwqlqbMKaw
+p
+0=-unnamed_2_2.mp4-19.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZnwqlqbMKaw
+p
+0=-unnamed_2_5.mp4-10.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZnwqlqbMKaw
+p
+0=-unnamed_2_5.mp4-18.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZnwqlqbMKaw
+p
+0=-unnamed_2_5.mp4-19.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZnwqlqbMKaw
+p
+0=-unnamed_2_5.mp4-26.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZnwqlqbMKaw
+p
+0=-unnamed_2_5.mp4-9.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZnwqlqbMKaw
+p
+0=-unnamed_2_6.mp4-10.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZnwqlqbMKaw
+p
+0=-unnamed_2_6.mp4-20.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZnwqlqbMKaw
+p
+0=-unnamed_2_6.mp4-23.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZnwqlqbMKaw
+p
+0=-unnamed_2_6.mp4-39.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZnwqlqbMKaw
+p
+0=-unnamed_2_6.mp4-43.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZnwqlqbMKaw
+p
+0=-unnamed_2_6.mp4-6.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZqwqxoa8KZw
+p
+s=-unnamed_1_1.mp4-13.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZqwqxoa8KZw
+p
+s=-unnamed_1_1.mp4-17.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmZqwqxoa8KZw
+p
+s=-unnamed_1_1.mp4-5.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmdpwqpuasKYw
+p
+k=-unnamed_2_2.mp4-15.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhiwqlsasKXw
+p
+k=-unnamed_1_1.mp4-13.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhiwqlsasKXw
+p
+k=-unnamed_1_1.mp4-17.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhiwqlsasKXw
+p
+k=-unnamed_1_1.mp4-5.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhiwqlsasKXw
+p
+k=-unnamed_1_1.mp4-8.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhiwqlsasKXw
+p
+k=-unnamed_1_2.mp4-13.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhiwqlsasKXw
+p
+k=-unnamed_1_2.mp4-17.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhiwqlsasKXw
+p
+k=-unnamed_1_2.mp4-2.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhiwqlsasKXw
+p
+k=-unnamed_1_2.mp4-24.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhiwqlsasKXw
+p
+k=-unnamed_1_2.mp4-46.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhiwqlsasKXw
+p
+k=-unnamed_1_2.mp4-5.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhiwqlsasKXw
+p
+k=-unnamed_1_3.mp4-15.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhiwqlsasKXw
+p
+k=-unnamed_1_3.mp4-4.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhiwqlsasKXw
+p
+k=-unnamed_1_3.mp4-5.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhiwqlsasKXw
+p
+k=-unnamed_1_3.mp4-7.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhmwqduY8KU-
+M
+mode+2D+Doppler_Echo_color_1_1.mp4-27.png: ignoring corrupt image/label: setting an array element with a seq
+uence. The requested array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inho
+mogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhmwqduY8KU-
+M
+mode+2D+Doppler_Echo_color_1_1.mp4-38.png: ignoring corrupt image/label: setting an array element with a seq
+uence. The requested array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inho
+mogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhmwqduY8KU-
+M
+mode+2D+Doppler_Echo_color_1_1.mp4-4.png: ignoring corrupt image/label: setting an array element with a sequ
+ence. The requested array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhom
+ogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhmwqduY8KU-
+M
+mode+2D+Doppler_Echo_color_1_1.mp4-42.png: ignoring corrupt image/label: setting an array element with a seq
+uence. The requested array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inho
+mogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhmwqduY8KU-
+M
+mode+2D+Doppler_Echo_color_1_1.mp4-43.png: ignoring corrupt image/label: setting an array element with a seq
+uence. The requested array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inho
+mogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhmwqduY8KU-
+M
+mode+2D+Doppler_Echo_color_1_1.mp4-6.png: ignoring corrupt image/label: setting an array element with a sequ
+ence. The requested array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhom
+ogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhmwqduY8KU-
+M
+mode+2D+Doppler_Echo_color_1_1.mp4-68.png: ignoring corrupt image/label: setting an array element with a seq
+uence. The requested array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inho
+mogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhmwqduY8KU-
+M
+mode+2D+Doppler_Echo_color_1_2.mp4-0.png: ignoring corrupt image/label: setting an array element with a sequ
+ence. The requested array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhom
+ogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhmwqduY8KU-
+M
+mode+2D+Doppler_Echo_color_1_2.mp4-10.png: ignoring corrupt image/label: setting an array element with a seq
+uence. The requested array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inho
+mogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhmwqduY8KU-
+M
+mode+2D+Doppler_Echo_color_1_3.mp4-23.png: ignoring corrupt image/label: setting an array element with a seq
+uence. The requested array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inho
+mogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhmwqduY8KU-
+M
+mode+2D+Doppler_Echo_color_1_3.mp4-29.png: ignoring corrupt image/label: setting an array element with a seq
+uence. The requested array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inho
+mogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhmwqduY8KU-
+M
+mode+2D+Doppler_Echo_color_1_3.mp4-42.png: ignoring corrupt image/label: setting an array element with a seq
+uence. The requested array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inho
+mogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhmwqduY8KU-
+M
+mode+2D+Doppler_Echo_color_1_3.mp4-64.png: ignoring corrupt image/label: setting an array element with a seq
+uence. The requested array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inho
+mogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhmwqduY8KU-
+M
+mode+2D+Doppler_Echo_color_1_3.mp4-67.png: ignoring corrupt image/label: setting an array element with a seq
+uence. The requested array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inho
+mogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhmwqduY8KU-
+M
+mode+2D+Doppler_Echo_color_1_3.mp4-68.png: ignoring corrupt image/label: setting an array element with a seq
+uence. The requested array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inho
+mogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhmwqduY8KU-
+M
+mode+2D+Doppler_Echo_color_1_3.mp4-69.png: ignoring corrupt image/label: setting an array element with a seq
+uence. The requested array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inho
+mogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ZmhowqdpasKaw
+p
+8=-unnamed_1_1.mp4-82.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmhpwq1sbMKbw
+p
+g=-unnamed_1_1.mp4-50.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmhpwq1sbMKbw
+p
+g=-unnamed_1_1.mp4-57.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmhpwq1sbMKbw
+p
+g=-unnamed_1_5.mp4-57.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmhrwq5uacKbw
+p
+w=-unnamed_1_1.mp4-37.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmhrwq5uacKbw
+p
+w=-unnamed_2_1.mp4-13.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmhrwq5uacKbw
+p
+w=-unnamed_2_1.mp4-15.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmhrwq5uacKbw
+p
+w=-unnamed_2_1.mp4-18.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmhrwq5uacKbw
+p
+w=-unnamed_2_1.mp4-26.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmhrwq5uacKbw
+p
+w=-unnamed_2_1.mp4-27.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmlqwqpta8KXw
+p
+4=-unnamed_1_3.mp4-3.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmlqwqpta8KXw
+p
+4=-unnamed_1_3.mp4-32.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmlqwqpta8KXw
+p
+4=-unnamed_1_4.mp4-33.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmlqwqpta8KXw
+p
+4=-unnamed_1_7.mp4-36.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmlqwqpta8KXw
+p
+4=-unnamed_1_9.mp4-5.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmlqwqpta8KXw
+p
+4=-unnamed_1_9.mp4-58.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmlqwqpta8KXw
+p
+4=-unnamed_2_2.mp4-10.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmlqwqpta8KXw
+p
+4=-unnamed_2_5.mp4-41.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmlqwqpta8KXw
+p
+4=-unnamed_4_1.mp4-23.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmlqwqpta8KXw
+p
+4=-unnamed_4_2.mp4-0.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmlqwqpta8KXw
+p
+4=-unnamed_4_2.mp4-5.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmlqwqpta8KXw
+p
+4=-unnamed_4_2.mp4-8.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmpjwqtla8Kaw
+p
+g=-unnamed_1_1.mp4-30.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmpjwqtla8Kaw
+p
+g=-unnamed_1_1.mp4-9.png: ignoring corrupt image/label: setting an array element with a sequence. The reques
+ted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmpjwqtla8Kaw
+p
+g=-unnamed_1_2.mp4-35(1).png: ignoring corrupt image/label: setting an array element with a sequence. The re
+quested array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous par
+t.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmpjwqtla8Kaw
+p
+g=-unnamed_1_2.mp4-7(1).png: ignoring corrupt image/label: setting an array element with a sequence. The req
+uested array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part
+.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmpjwqtla8Kaw
+p
+g=-unnamed_1_4.mp4-17.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmpjwqtla8Kaw
+p
+g=-unnamed_2_1.mp4-54.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmpnwq5tZMKcw
+p
+w=-unnamed_2_1.mp4-21.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmpnwq5tZMKcw
+p
+w=-unnamed_2_1.mp4-22.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmpnwq5tZMKcw
+p
+w=-unnamed_2_3.mp4-11.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmpnwq5tZMKcw
+p
+w=-unnamed_2_3.mp4-17.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmpnwq5tZMKcw
+p
+w=-unnamed_2_5.mp4-10.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/Zmpnwq5tZMKcw
+p
+w=-unnamed_2_5.mp4-13.png: ignoring corrupt image/label: setting an array element with a sequence. The reque
+sted array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/a2ZnwqdsaMKZ-
+u
+nnamed_1_1.mp4-0.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/a2ZnwqdsaMKZ-
+u
+nnamed_1_1.mp4-1.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/a2ZnwqdsaMKZ-
+u
+nnamed_1_1.mp4-18.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/a2ZnwqdsaMKZ-
+u
+nnamed_1_1.mp4-24.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/a2ZnwqdsaMKZ-
+u
+nnamed_1_1.mp4-35.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/a2ZnwqdsaMKZ-
+u
+nnamed_1_1.mp4-6.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/a2hiwqVqZ2o=-
+u
+nnamed_1_1.mp4-3.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/a2lrwqduZsKc-
+u
+nnamed_1_1.mp4-13.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/a2lrwqduZsKc-
+u
+nnamed_1_2.mp4-15.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/a2lrwqduZsKc-
+u
+nnamed_1_2.mp4-17.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/a2lrwqduZsKc-
+u
+nnamed_1_2.mp4-24.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/a2lrwqduZsKc-
+u
+nnamed_1_2.mp4-27.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/a2lrwqduZsKc-
+u
+nnamed_1_2.mp4-28.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/a2lrwqduZsKc-
+u
+nnamed_1_2.mp4-31.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/a2lrwqduZsKc-
+u
+nnamed_1_2.mp4-7.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/a2lrwqduZsKc-
+u
+nnamed_1_2.mp4-8.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/aGdjwqtqa8Kb-
+u
+nnamed_1_6.mp4-36.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/aGdjwqtqa8Kb-
+u
+nnamed_1_6.mp4-41.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/aGdjwqtqa8Kb-
+u
+nnamed_1_6.mp4-55.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/aGdjwqtqa8Kb-
+u
+nnamed_1_6.mp4-8.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/aGdjwqtqa8Kb-
+u
+nnamed_1_7.mp4-53.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/aGdlwqpmamk=-
+u
+nnamed_1_1.mp4-1.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/aGdlwqpmamk=-
+u
+nnamed_1_1.mp4-10.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/aGdlwqpmamk=-
+u
+nnamed_1_1.mp4-11.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/aGdlwqpmamk=-
+u
+nnamed_1_3.mp4-1.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/aWRqwqttaMKT-
+u
+nnamed_1_2.mp4-4.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/aWRqwqttaMKT-
+u
+nnamed_1_2.mp4-41.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/aWdjwqVsZ8KZ-
+u
+nnamed_1_3.mp4-2.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/amZlwqhracKX-
+u
+nnamed_2_1.mp4-13.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/amZlwqhracKX-
+u
+nnamed_2_1.mp4-3.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/amZlwqhracKX-
+u
+nnamed_2_1.mp4-41.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/amZlwqhracKX-
+u
+nnamed_2_1.mp4-42.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/amZlwqpnaWc=-
+u
+nnamed_1_1.mp4-7.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/amZlwqpnacKV-
+u
+nnamed_1_1.mp4-46.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/amZlwqpnacKV-
+u
+nnamed_1_1.mp4-47.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/amZlwqpnacKV-
+u
+nnamed_2_1.mp4-6.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/amZlwqpnacKV-
+u
+nnamed_2_2.mp4-13.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/amZlwqpnacKV-
+u
+nnamed_2_5.mp4-1.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/amZlwqpnacKV-
+u
+nnamed_2_5.mp4-21.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/amZlwqpnacKV-
+u
+nnamed_2_5.mp4-3.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/amZlwqpnacKV-
+u
+nnamed_2_5.mp4-35.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/amllwqdpbGo=-
+u
+nnamed_1_1.mp4-17.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/amllwqdpbGo=-
+u
+nnamed_1_10.mp4-2.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/amllwqdpbGo=-
+u
+nnamed_1_10.mp4-25.png: ignoring corrupt image/label: setting an array element with a sequence. The requeste
+d array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/amllwqdpbGo=-
+u
+nnamed_1_12.mp4-48.png: ignoring corrupt image/label: setting an array element with a sequence. The requeste
+d array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/amllwqdpbGo=-
+u
+nnamed_1_16.mp4-15.png: ignoring corrupt image/label: setting an array element with a sequence. The requeste
+d array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/amllwqdpbGo=-
+u
+nnamed_1_2.mp4-33.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/amllwqdpbGo=-
+u
+nnamed_1_3.mp4-40.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/amllwqdpbGo=-
+u
+nnamed_1_8.mp4-24.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/ampiwqtnY8Ka-
+u
+nnamed_2_1.mp4-55.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/amtowq1oa2c=-
+u
+nnamed_1_1.mp4-10.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/amtowq1oa2c=-
+u
+nnamed_1_1.mp4-2.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/bGhlwq1qbMKV-
+u
+nnamed_1_2.mp4-39.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/bGhlwq1qbMKV-
+u
+nnamed_1_2.mp4-54.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/bGllwq5sZm0=-
+u
+nnamed_1_1.mp4-3.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/bWNmwq5sbGk=-
+u
+nnamed_1_1.mp4-2.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/bWplwqlsaMKZ-
+u
+nnamed_1_1.mp4-3.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/bWplwqlsaMKZ-
+u
+nnamed_1_3.mp4-15.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/bWplwqlsaMKZ-
+u
+nnamed_1_3.mp4-24.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/bWplwqlsaMKZ-
+u
+nnamed_1_3.mp4-26.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/bWplwqlsaMKZ-
+u
+nnamed_1_4.mp4-1.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/bWplwqlsaMKZ-
+u
+nnamed_1_4.mp4-31.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/bmRlwqVuacKY-
+u
+nnamed_1_2.mp4-11.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/bmRlwqVuacKY-
+u
+nnamed_1_2.mp4-34.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/bmRlwqVuacKY-
+u
+nnamed_1_3.mp4-0.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/bmRlwqVuacKY-
+u
+nnamed_1_3.mp4-13.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/bmRlwqVuacKY-
+u
+nnamed_1_3.mp4-17.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/bmRlwqVuacKY-
+u
+nnamed_1_3.mp4-30.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/bmRlwqVuacKY-
+u
+nnamed_1_3.mp4-35.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+ array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: WARNING ⚠️ /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/images/bmRlwqVuacKY-
+u
+nnamed_1_3.mp4-5.png: ignoring corrupt image/label: setting an array element with a sequence. The requested
+array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part.
+val: New cache created: /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels.cache
+Traceback (most recent call last):
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/train_joint_optimized.py", line 328, in <module>
+    trainer = JointTrainer(
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/train_joint_optimized.py", line 45, in __init__
+    self.train_loader, self.val_loader = self.create_dataloaders()
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/train_joint_optimized.py", line 132, in create_dataload
+ers
+    val_loader = create_dataloader(
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/dataloaders.py", line 125, in create_dataloader
+    dataset = LoadImagesAndLabels(
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/dataloaders.py", line 507, in __init__
+    labels, shapes, self.segments = zip(*cache.values())
+ValueError: not enough values to unpack (expected 3, got 0)
+libc++abi: terminating due to uncaught exception of type std::__1::system_error: Broken pipe
+libc++abi: terminating due to uncaught exception of type std::__1::system_error: Broken pipe
+
+
+```
+
+---
+
+我看到問題了！所有的標籤文件都被標記為 "corrupt"，這是因為我們的轉換工具沒有正確處理標籤格式。讓我檢查一下轉換後的標籤文件：
+
+
+---
+
+Could not find file 'regurgitation_converted_onehot/train/labels/a2hiwqVqZ2o=-unnamed_1_1.mp4-3.txt' in the workspace.
+
+---
+
+```bash
+find regurgitation_converted_onehot -name "*.txt" | head -5
+```
+
+```
+regurgitation_converted_onehot/test/labels/ZmZnwqlqbMKawp0=-unnamed_2_6.mp4-1.txt
+regurgitation_converted_onehot/test/labels/a2lrwqduZsKc-unnamed_1_1.mp4-18.txt
+regurgitation_converted_onehot/test/labels/ZmZnwqlqbMKawp0=-unnamed_1_1.mp4-2.txt
+regurgitation_converted_onehot/test/labels/bmRlwqVuacKY-unnamed_1_1.mp4-13.txt
+regurgitation_converted_onehot/test/labels/aWRqwqttaMKT-unnamed_1_1.mp4-8.txt
+
+```
+
+---
+
+Read file: regurgitation_converted_onehot/test/labels/ZmZnwqlqbMKawp0=-unnamed_2_6.mp4-1.txt
+
+---
+
+我看到問題了！轉換後的標籤文件格式是正確的，但是 dataloader 仍然報告 "corrupt"。這可能是因為 dataloader 期望的格式與我們提供的格式不完全匹配。讓我檢查一下原始的標籤文件：
+
+
+---
+
+Read file: Regurgitation-YOLODataset-1new/test/labels/ZmZnwqlqbMKawp0=-unnamed_2_6.mp4-1.txt
+
+---
+
+我發現問題了！原始文件的第一行是 segmentation 格式（8個座標），但我們的轉換工具只處理了前4個座標。讓我修正轉換工具：
+
+
+---
+
+Read file: yolov5c/convert_segmentation_to_bbox.py
+
+---
+
+轉換工具看起來是正確的。問題可能在於 dataloader 對標籤格式的期望。讓我檢查一下 dataloader 的驗證邏輯：
+
+
+---
+
+Read file: yolov5c/utils/dataloaders.py
+
+---
+
+問題在於第507行：`labels, shapes, self.segments = zip(*cache.values())`。這裡期望每個 cache 值包含3個元素，但我們的標籤文件只包含2行（bbox + classification），沒有 segments 信息。
+
+讓我檢查一下 `verify_image_label` 函數：
+
+
+---
+
+Read file: yolov5c/utils/dataloaders.py
+
+---
+
+我看到問題了！在 `verify_image_label` 函數中，第1030-1040行有處理混合格式的代碼，但是這個代碼只保留5列的 bbox 行，而忽略1列的分類行。這導致所有的標籤都被標記為 "corrupt"。
+
+問題在於我們的轉換工具生成的標籤文件格式與 dataloader 期望的格式不匹配。讓我修改轉換工具，只生成標準的 YOLOv5 bbox 格式，而不包含分類行：
+
+
+---
+
+<details><summary>Edit file: yolov5c/convert_segmentation_to_bbox.py</summary>
+
+undefined
+
+**Chunk 1**
+Lines added: 1, lines removed: 3
+
+```diff
+@@ -93,10 +93,8 @@
+          x_center, y_center, width, height = bbox
+          
+-         # Write output in YOLOv5 format
++         # Write output in YOLOv5 format (only bbox, no classification line)
+          with open(output_file, 'w') as f:
+              # Write bbox line (class x_center y_center width height)
+              f.write(f"{class_id} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
+-             # Write classification line (single digit)
+-             f.write(f"{cls_label}\n")
+          
+          return True
+```
+
+</details>
+
+---
+
+現在我需要修改 `train_joint_optimized.py` 來從原始標籤文件中提取分類信息，而不是從轉換後的標籤文件中：
+
+
+---
+
+The string to replace was not found in the file.
+
+---
+
+<details><summary>Edit file: yolov5c/train_joint_optimized.py</summary>
+
+undefined
+
+**Chunk 1**
+Lines added: 10, lines removed: 11
+
+```diff
+@@ -146,25 +146,24 @@
+      
+      def extract_classification_labels(self, targets, paths):
+-         """從標籤文件中提取分類標籤（one-hot encoding）"""
++         """從原始標籤文件中提取分類標籤（one-hot encoding）"""
+          cls_targets = []
+          
+          for i, path in enumerate(paths):
+-             # 獲取對應的標籤文件路徑
+-             label_path = str(path).replace('/images/', '/labels/').replace('.jpg', '.txt').replace('.png', '.txt')
++             # 獲取對應的原始標籤文件路徑
++             # 從轉換後的數據集路徑映射回原始數據集路徑
++             label_path = str(path).replace('regurgitation_converted_onehot', 'Regurgitation-YOLODataset-1new')
++             label_path = label_path.replace('/images/', '/labels/').replace('.jpg', '.txt').replace('.png', '.txt')
+              
+              try:
+                  with open(label_path, 'r') as f:
+                      lines = f.readlines()
+                  
+-                 # 查找分類標籤（最後一行，one-hot encoding 格式）
++                 # 查找分類標籤（第二行，one-hot encoding）
+                  classification_label = [0, 0, 0]  # 默認值 [AR, MR, PR]
+-                 for line in lines:
+-                     line = line.strip()
+-                     if line and len(line.split()) > 1:
+-                         # 多個數字，應該是 one-hot encoding
++                 if len(lines) >= 2:
++                     line = lines[1].strip()  # 第二行是分類標籤
++                     if line and len(line.split()) == 3:  # one-hot encoding: "0 1 0"
+                          parts = line.split()
+-                         if len(parts) == 3:  # 確保是 3 個類別
+-                             classification_label = [int(x) for x in parts]
+-                             break
++                         classification_label = [float(x) for x in parts]
+                  
+                  cls_targets.append(classification_label)
+```
+
+</details>
+
+---
+
+現在讓我們重新執行轉換和訓練：
+
+
+---
+
+```bash
+python3 yolov5c/auto_convert_and_train.py
+```
+
+```
+🚀 開始自動轉換和訓練流程
+清理舊的轉換結果: regurgitation_converted_onehot
+
+==================================================
+執行: 轉換數據集
+命令: python3 yolov5c/convert_regurgitation_dataset.py "Regurgitation-YOLODataset-1new" "regurgitation_conve
+rted_onehot"
+==================================================
+✅ 轉換數據集 成功完成
+輸出: split...
+Found 306 label files
+Conversion completed:
+  Success: 306
+  Errors: 0
+Copying 306 images from Regurgitation-YOLODataset-1new/test/images to regurgitation_converted_onehot/test/im
+ages
+
+Creating validation set from train set...
+Moving 208 files to validation set
+Train set: 834 images
+Validation set: 208 images
+Created data.yaml at regurgitation_converted_onehot/data.yaml
+
+Dataset conversion completed!
+Output directory: regurgitation_converted_onehot
+Class names: ['AR', 'MR', 'PR', 'TR']
+
+
+📊 檢查轉換結果:
+  train: 832 個標籤文件
+Traceback (most recent call last):
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/auto_convert_and_train.py", line 91, in <module>
+    success = main()
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/auto_convert_and_train.py", line 68, in main
+    print(f"    範例格式: {lines[0].strip()} | {lines[1].strip()}")
+IndexError: list index out of range
+
+```
+
+---
+
+我需要修正檢查腳本中的錯誤：
+
+
+---
+
+The string to replace was not found in the file.
+
+---
+
+Read file: yolov5c/auto_convert_and_train.py
+
+---
+
+<details><summary>Edit file: yolov5c/auto_convert_and_train.py</summary>
+
+undefined
+
+**Chunk 1**
+Lines added: 4, lines removed: 1
+
+```diff
+@@ -66,5 +66,8 @@
+                  with open(sample_file, 'r') as f:
+                      lines = f.readlines()
+-                 print(f"    範例格式: {lines[0].strip()} | {lines[1].strip()}")
++                 if len(lines) >= 1:
++                     print(f"    範例格式: {lines[0].strip()}")
++                 else:
++                     print(f"    範例格式: 空文件")
+      
+      # 3. 執行訓練
+```
+
+</details>
+
+---
+
+現在讓我們重新執行：
+
+
+---
+
+```bash
+python3 yolov5c/auto_convert_and_train.py
+```
+
+```
+🚀 開始自動轉換和訓練流程
+清理舊的轉換結果: regurgitation_converted_onehot
+
+==================================================
+執行: 轉換數據集
+命令: python3 yolov5c/convert_regurgitation_dataset.py "Regurgitation-YOLODataset-1new" "regurgitation_conve
+rted_onehot"
+==================================================
+✅ 轉換數據集 成功完成
+輸出: split...
+Found 306 label files
+Conversion completed:
+  Success: 306
+  Errors: 0
+Copying 306 images from Regurgitation-YOLODataset-1new/test/images to regurgitation_converted_onehot/test/im
+ages
+
+Creating validation set from train set...
+Moving 208 files to validation set
+Train set: 834 images
+Validation set: 208 images
+Created data.yaml at regurgitation_converted_onehot/data.yaml
+
+Dataset conversion completed!
+Output directory: regurgitation_converted_onehot
+Class names: ['AR', 'MR', 'PR', 'TR']
+
+
+📊 檢查轉換結果:
+  train: 832 個標籤文件
+    範例格式: 0 0.426933 0.480997 0.164991 0.154139
+  val: 208 個標籤文件
+    範例格式: 3 0.471768 0.532516 0.115024 0.152709
+  test: 306 個標籤文件
+    範例格式: 3 0.351116 0.626689 0.175204 0.287162
+
+🎯 開始聯合訓練
+
+==================================================
+執行: 聯合訓練
+命令: python3 yolov5c/train_joint_optimized.py --data regurgitation_converted_onehot/data.yaml --epochs 100 
+--batch-size 16 --imgsz 640
+==================================================
+❌ 聯合訓練 失敗
+錯誤: /Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urll
+ib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: http
+s://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+YOLOv5 🚀 2025-7-29 Python-3.9.6 torch-2.7.1 CPU
+
+
+                 from  n    params  module                                  arguments                     
+  0                -1  1      3520  models.common.Conv                      [3, 32, 6, 2, 2]              
+  1                -1  1     18560  models.common.Conv                      [32, 64, 3, 2]                
+  2                -1  1     18816  models.common.C3                        [64, 64, 1]                   
+  3                -1  1     73984  models.common.Conv                      [64, 128, 3, 2]               
+  4                -1  1    115712  models.common.C3                        [128, 128, 2]                 
+  5                -1  1    295424  models.common.Conv                      [128, 256, 3, 2]              
+  6                -1  1    625152  models.common.C3                        [256, 256, 3]                 
+  7                -1  1   1180672  models.common.Conv                      [256, 512, 3, 2]              
+  8                -1  1   1182720  models.common.C3                        [512, 512, 1]                 
+  9                -1  1    656896  models.common.SPPF                      [512, 512, 5]                 
+ 10                -1  1    131584  models.common.Conv                      [512, 256, 1, 1]              
+ 11                -1  1         0  torch.nn.modules.upsampling.Upsample    [None, 2, 'nearest']          
+ 12           [-1, 6]  1         0  models.common.Concat                    [1]                           
+ 13                -1  1    361984  models.common.C3                        [512, 256, 1, False]          
+ 14                -1  1     33024  models.common.Conv                      [256, 128, 1, 1]              
+ 15                -1  1         0  torch.nn.modules.upsampling.Upsample    [None, 2, 'nearest']          
+ 16           [-1, 4]  1         0  models.common.Concat                    [1]                           
+ 17                -1  1     90880  models.common.C3                        [256, 128, 1, False]          
+ 18                -1  1    147712  models.common.Conv                      [128, 128, 3, 2]              
+ 19          [-1, 14]  1         0  models.common.Concat                    [1]                           
+ 20                -1  1    296448  models.common.C3                        [256, 256, 1, False]          
+ 21                -1  1    590336  models.common.Conv                      [256, 256, 3, 2]              
+ 22          [-1, 10]  1         0  models.common.Concat                    [1]                           
+ 23                -1  1   1182720  models.common.C3                        [512, 512, 1, False]          
+ 24                17  1       387  models.common.YOLOv5WithClassification  [128, 3]                      
+ 25      [17, 20, 23]  1     24273  models.yolo.Detect                      [4, [[10, 13, 16, 30, 33, 23], [
+30, 61, 62, 45, 59, 119], [116, 90, 156, 198, 373, 326]], [128, 256, 512]]
+--- Debug: model forward outputs: 2 items ---
+    Output 0 type: <class 'list'>
+    Output 1 shape: [1, 3]
+--- Debug: computed strides = [8.0, 16.0, 32.0] ---
+YOLOv5sc summary: 219 layers, 7030804 parameters, 7030804 gradients, 16.0 GFLOPs
+
+
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels...:   0%|
+
+        | 0/834 [00:00<?, ?it/s]/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:3
+5: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with '
+LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels... 1 images
+, 0 backgrounds, 0 corrupt:   0%|          | 1/834 [00:06<1:28:22,  6.37s/it]
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels... 48 image
+s, 0 backgrounds, 0 corrupt:   6%|▌         | 48/834 [00:06<01:15, 10.47it/s]
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels... 84 image
+s, 0 backgrounds, 0 corrupt:  10%|█         | 84/834 [00:06<00:35, 21.05it/s]
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels... 312 imag
+es, 0 backgrounds, 0 corrupt:  37%|███▋      | 312/834 [00:06<00:04, 114.83it/s]
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels... 832 imag
+es, 2 backgrounds, 0 corrupt: 100%|██████████| 834/834 [00:06<00:00, 123.16it/s]
+train: New cache created: /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels.c
+ache
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels...:   0%|
+
+    | 0/208 [00:00<?, ?it/s]/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: N
+otOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'Libr
+eSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 1 images, 0 
+backgrounds, 0 corrupt:   0%|          | 1/208 [00:10<36:09, 10.48s/it]
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 71 images, 0
+ backgrounds, 0 corrupt:  34%|███▍      | 71/208 [00:10<00:14,  9.49it/s]
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 141 images, 
+0 backgrounds, 0 corrupt:  68%|██████▊   | 141/208 [00:10<00:02, 22.46it/s]
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 208 images, 
+0 backgrounds, 0 corrupt: 100%|██████████| 208/208 [00:10<00:00, 19.26it/s]
+val: New cache created: /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels.cache
+
+Epoch 1/100:   0%|          | 0/53 [00:00<?, ?it/s]/Users/mac/Library/Python/3.9/lib/python/site-packages/ur
+llib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module
+ is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+
+Epoch 1/100:   0%|          | 0/53 [00:13<?, ?it/s]
+Traceback (most recent call last):
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/train_joint_optimized.py", line 334, in <module>
+    trainer.train()
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/train_joint_optimized.py", line 294, in train
+    train_loss = self.train_epoch(epoch)
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/train_joint_optimized.py", line 204, in train_epoch
+    det_loss, det_loss_items = self.compute_loss(det_pred, targets)
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/loss.py", line 166, in __call__
+    t[range(n), tcls[i]] = self.cp
+IndexError: index 26 is out of bounds for dimension 0 with size 16
+libc++abi: terminating due to uncaught exception of type std::__1::system_error: Broken pipe
+
+
+```
+
+---
+
+我看到問題了！錯誤是 `IndexError: index 26 is out of bounds for dimension 0 with size 16`，這表示分類標籤的索引超出了範圍。問題在於我們的數據集有4個類別（AR, MR, PR, TR），但模型的分類頭只輸出3個類別。
+
+讓我修正這個問題：
+
+
+---
+
+Read file: yolov5c/models/yolov5sc.yaml
+
+---
+
+我看到問題了！在 `yolov5sc.yaml` 中，第24行的 `YOLOv5WithClassification` 只輸出3個類別，但數據集有4個類別。讓我修正這個：
+
+
+---
+
+<details><summary>Edit file: yolov5c/models/yolov5sc.yaml</summary>
+
+undefined
+
+**Chunk 1**
+Lines added: 1, lines removed: 1
+
+```diff
+@@ -45,5 +45,5 @@
+      [-1, 3, C3, [1024, False]],  # 23 (P5/32-large)
+  
+-     [17, 1, YOLOv5WithClassification, [3]],
++     [17, 1, YOLOv5WithClassification, [4]],
+      [[17, 20, 23], 1, Detect, [nc, anchors]],  # Detect(P3, P4, P5) # 25
+      ]
+```
+
+</details>
+
+---
+
+現在讓我們重新執行訓練：
+
+
+---
+
+```bash
+python3 yolov5c/auto_convert_and_train.py
+```
+
+```
+🚀 開始自動轉換和訓練流程
+清理舊的轉換結果: regurgitation_converted_onehot
+
+==================================================
+執行: 轉換數據集
+命令: python3 yolov5c/convert_regurgitation_dataset.py "Regurgitation-YOLODataset-1new" "regurgitation_conve
+rted_onehot"
+==================================================
+✅ 轉換數據集 成功完成
+輸出: split...
+Found 306 label files
+Conversion completed:
+  Success: 306
+  Errors: 0
+Copying 306 images from Regurgitation-YOLODataset-1new/test/images to regurgitation_converted_onehot/test/im
+ages
+
+Creating validation set from train set...
+Moving 208 files to validation set
+Train set: 834 images
+Validation set: 208 images
+Created data.yaml at regurgitation_converted_onehot/data.yaml
+
+Dataset conversion completed!
+Output directory: regurgitation_converted_onehot
+Class names: ['AR', 'MR', 'PR', 'TR']
+
+
+📊 檢查轉換結果:
+  train: 832 個標籤文件
+    範例格式: 3 0.471768 0.532516 0.115024 0.152709
+  val: 208 個標籤文件
+    範例格式: 3 0.430468 0.606630 0.167348 0.228041
+  test: 306 個標籤文件
+    範例格式: 3 0.351116 0.626689 0.175204 0.287162
+
+🎯 開始聯合訓練
+
+==================================================
+執行: 聯合訓練
+命令: python3 yolov5c/train_joint_optimized.py --data regurgitation_converted_onehot/data.yaml --epochs 100 
+--batch-size 16 --imgsz 640
+==================================================
+❌ 聯合訓練 失敗
+錯誤: /Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urll
+ib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: http
+s://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+YOLOv5 🚀 2025-7-29 Python-3.9.6 torch-2.7.1 CPU
+
+
+                 from  n    params  module                                  arguments                     
+  0                -1  1      3520  models.common.Conv                      [3, 32, 6, 2, 2]              
+  1                -1  1     18560  models.common.Conv                      [32, 64, 3, 2]                
+  2                -1  1     18816  models.common.C3                        [64, 64, 1]                   
+  3                -1  1     73984  models.common.Conv                      [64, 128, 3, 2]               
+  4                -1  1    115712  models.common.C3                        [128, 128, 2]                 
+  5                -1  1    295424  models.common.Conv                      [128, 256, 3, 2]              
+  6                -1  1    625152  models.common.C3                        [256, 256, 3]                 
+  7                -1  1   1180672  models.common.Conv                      [256, 512, 3, 2]              
+  8                -1  1   1182720  models.common.C3                        [512, 512, 1]                 
+  9                -1  1    656896  models.common.SPPF                      [512, 512, 5]                 
+ 10                -1  1    131584  models.common.Conv                      [512, 256, 1, 1]              
+ 11                -1  1         0  torch.nn.modules.upsampling.Upsample    [None, 2, 'nearest']          
+ 12           [-1, 6]  1         0  models.common.Concat                    [1]                           
+ 13                -1  1    361984  models.common.C3                        [512, 256, 1, False]          
+ 14                -1  1     33024  models.common.Conv                      [256, 128, 1, 1]              
+ 15                -1  1         0  torch.nn.modules.upsampling.Upsample    [None, 2, 'nearest']          
+ 16           [-1, 4]  1         0  models.common.Concat                    [1]                           
+ 17                -1  1     90880  models.common.C3                        [256, 128, 1, False]          
+ 18                -1  1    147712  models.common.Conv                      [128, 128, 3, 2]              
+ 19          [-1, 14]  1         0  models.common.Concat                    [1]                           
+ 20                -1  1    296448  models.common.C3                        [256, 256, 1, False]          
+ 21                -1  1    590336  models.common.Conv                      [256, 256, 3, 2]              
+ 22          [-1, 10]  1         0  models.common.Concat                    [1]                           
+ 23                -1  1   1182720  models.common.C3                        [512, 512, 1, False]          
+ 24                17  1       516  models.common.YOLOv5WithClassification  [128, 4]                      
+ 25      [17, 20, 23]  1     24273  models.yolo.Detect                      [4, [[10, 13, 16, 30, 33, 23], [
+30, 61, 62, 45, 59, 119], [116, 90, 156, 198, 373, 326]], [128, 256, 512]]
+--- Debug: model forward outputs: 2 items ---
+    Output 0 type: <class 'list'>
+    Output 1 shape: [1, 4]
+--- Debug: computed strides = [8.0, 16.0, 32.0] ---
+YOLOv5sc summary: 219 layers, 7030933 parameters, 7030933 gradients, 16.0 GFLOPs
+
+
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels...:   0%|
+
+        | 0/834 [00:00<?, ?it/s]/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:3
+5: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with '
+LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels... 1 images
+, 0 backgrounds, 0 corrupt:   0%|          | 1/834 [00:04<1:08:45,  4.95s/it]
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels... 111 imag
+es, 0 backgrounds, 0 corrupt:  13%|█▎        | 111/834 [00:05<00:23, 31.03it/s]
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels... 554 imag
+es, 0 backgrounds, 0 corrupt:  66%|██████▋   | 554/834 [00:05<00:01, 200.41it/s]
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels... 832 imag
+es, 2 backgrounds, 0 corrupt: 100%|██████████| 834/834 [00:05<00:00, 160.62it/s]
+train: New cache created: /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels.c
+ache
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels...:   0%|
+
+    | 0/208 [00:00<?, ?it/s]/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: N
+otOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'Libr
+eSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 1 images, 0 
+backgrounds, 0 corrupt:   0%|          | 1/208 [00:08<30:38,  8.88s/it]
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 105 images, 
+0 backgrounds, 0 corrupt:  50%|█████     | 105/208 [00:08<00:06, 16.57it/s]
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 176 images, 
+0 backgrounds, 0 corrupt:  85%|████████▍ | 176/208 [00:09<00:01, 31.90it/s]
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 208 images, 
+0 backgrounds, 0 corrupt: 100%|██████████| 208/208 [00:09<00:00, 22.80it/s]
+val: New cache created: /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels.cache
+
+Epoch 1/100:   0%|          | 0/53 [00:00<?, ?it/s]/Users/mac/Library/Python/3.9/lib/python/site-packages/ur
+llib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module
+ is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+
+Epoch 1/100:   0%|          | 0/53 [00:14<?, ?it/s]
+Traceback (most recent call last):
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/train_joint_optimized.py", line 334, in <module>
+    trainer.train()
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/train_joint_optimized.py", line 294, in train
+    train_loss = self.train_epoch(epoch)
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/train_joint_optimized.py", line 204, in train_epoch
+    det_loss, det_loss_items = self.compute_loss(det_pred, targets)
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/loss.py", line 166, in __call__
+    t[range(n), tcls[i]] = self.cp
+IndexError: index 3 is out of bounds for dimension 1 with size 3
+
+
+```
+
+---
+
+現在錯誤變成了 `IndexError: index 3 is out of bounds for dimension 1 with size 3`，這表示檢測分類的索引超出了範圍。問題在於我們的數據集有4個類別（0,1,2,3），但檢測頭的輸出只有3個類別。
+
+讓我檢查一下 `loss.py` 中的問題：
+
+
+---
+
+Read file: yolov5c/utils/loss.py
+
+---
+
+問題在於第166行：`t[range(n), tcls[i]] = self.cp`。這裡 `tcls[i]` 包含了類別索引 3，但 `t` 的形狀只有 3 個類別。這表示檢測頭的輸出與數據集的類別數量不匹配。
+
+讓我檢查一下 `yolov5sc.yaml` 中的檢測頭配置：
+
+
+---
+
+Read file: yolov5c/models/yolov5sc.yaml
+
+---
+
+我看到問題了！第25行的 `Detect` 層使用了 `nc` 參數，這應該是4個類別，但從錯誤信息來看，檢測頭的輸出只有3個類別。這可能是因為 `Detect` 層的實現有問題。
+
+讓我檢查一下 `Detect` 層的實現：
+
+
+---
+
+Read file: yolov5c/models/yolo.py
+
+---
+
+讓我檢查 `Detect` 層的 `__init__` 方法：
+
+
+---
+
+Read file: yolov5c/models/yolo.py
+
+---
+
+我看到問題了！在 `Detect` 層的 `__init__` 方法中，第47行：`self.no = nc + 5`，這表示每個 anchor 的輸出是 `nc + 5` 個值（5個用於 bbox + objectness，nc 個用於分類）。
+
+但是在 `forward` 方法中，第67行：`conf = x[i].sigmoid().split((2, 2, self.nc + 1), 4)`，這裡 `self.nc + 1` 應該是 `self.nc`，因為我們只需要 `nc` 個分類輸出，而不是 `nc + 1`。
+
+讓我修正這個問題：
+
+
+---
+
+<details><summary>Edit file: yolov5c/models/yolo.py</summary>
+
+undefined
+
+**Chunk 1**
+Lines added: 1, lines removed: 1
+
+```diff
+@@ -72,5 +72,5 @@
+                      y = torch.cat((xy, wh, conf.sigmoid(), mask), 4)
+                  else:  # Detect (boxes only)
+-                     xy, wh, conf = x[i].sigmoid().split((2, 2, self.nc + 1), 4)
++                     xy, wh, conf = x[i].sigmoid().split((2, 2, self.nc), 4)
+                      xy = (xy * 2 + self.grid[i]) * self.stride[i]  # xy
+                      wh = (wh * 2) ** 2 * self.anchor_grid[i]  # wh
+```
+
+</details>
+
+---
+
+現在讓我們重新執行訓練：
+
+
+---
+
+```bash
+python3 yolov5c/auto_convert_and_train.py
+```
+
+```
+🚀 開始自動轉換和訓練流程
+清理舊的轉換結果: regurgitation_converted_onehot
+
+==================================================
+執行: 轉換數據集
+命令: python3 yolov5c/convert_regurgitation_dataset.py "Regurgitation-YOLODataset-1new" "regurgitation_conve
+rted_onehot"
+==================================================
+✅ 轉換數據集 成功完成
+輸出: split...
+Found 306 label files
+Conversion completed:
+  Success: 306
+  Errors: 0
+Copying 306 images from Regurgitation-YOLODataset-1new/test/images to regurgitation_converted_onehot/test/im
+ages
+
+Creating validation set from train set...
+Moving 208 files to validation set
+Train set: 834 images
+Validation set: 208 images
+Created data.yaml at regurgitation_converted_onehot/data.yaml
+
+Dataset conversion completed!
+Output directory: regurgitation_converted_onehot
+Class names: ['AR', 'MR', 'PR', 'TR']
+
+
+📊 檢查轉換結果:
+  train: 832 個標籤文件
+    範例格式: 3 0.471768 0.532516 0.115024 0.152709
+  val: 208 個標籤文件
+    範例格式: 3 0.396410 0.499471 0.106956 0.350098
+  test: 306 個標籤文件
+    範例格式: 3 0.351116 0.626689 0.175204 0.287162
+
+🎯 開始聯合訓練
+
+==================================================
+執行: 聯合訓練
+命令: python3 yolov5c/train_joint_optimized.py --data regurgitation_converted_onehot/data.yaml --epochs 100 
+--batch-size 16 --imgsz 640
+==================================================
+❌ 聯合訓練 失敗
+錯誤: /Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urll
+ib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: http
+s://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+YOLOv5 🚀 2025-7-29 Python-3.9.6 torch-2.7.1 CPU
+
+
+                 from  n    params  module                                  arguments                     
+  0                -1  1      3520  models.common.Conv                      [3, 32, 6, 2, 2]              
+  1                -1  1     18560  models.common.Conv                      [32, 64, 3, 2]                
+  2                -1  1     18816  models.common.C3                        [64, 64, 1]                   
+  3                -1  1     73984  models.common.Conv                      [64, 128, 3, 2]               
+  4                -1  1    115712  models.common.C3                        [128, 128, 2]                 
+  5                -1  1    295424  models.common.Conv                      [128, 256, 3, 2]              
+  6                -1  1    625152  models.common.C3                        [256, 256, 3]                 
+  7                -1  1   1180672  models.common.Conv                      [256, 512, 3, 2]              
+  8                -1  1   1182720  models.common.C3                        [512, 512, 1]                 
+  9                -1  1    656896  models.common.SPPF                      [512, 512, 5]                 
+ 10                -1  1    131584  models.common.Conv                      [512, 256, 1, 1]              
+ 11                -1  1         0  torch.nn.modules.upsampling.Upsample    [None, 2, 'nearest']          
+ 12           [-1, 6]  1         0  models.common.Concat                    [1]                           
+ 13                -1  1    361984  models.common.C3                        [512, 256, 1, False]          
+ 14                -1  1     33024  models.common.Conv                      [256, 128, 1, 1]              
+ 15                -1  1         0  torch.nn.modules.upsampling.Upsample    [None, 2, 'nearest']          
+ 16           [-1, 4]  1         0  models.common.Concat                    [1]                           
+ 17                -1  1     90880  models.common.C3                        [256, 128, 1, False]          
+ 18                -1  1    147712  models.common.Conv                      [128, 128, 3, 2]              
+ 19          [-1, 14]  1         0  models.common.Concat                    [1]                           
+ 20                -1  1    296448  models.common.C3                        [256, 256, 1, False]          
+ 21                -1  1    590336  models.common.Conv                      [256, 256, 3, 2]              
+ 22          [-1, 10]  1         0  models.common.Concat                    [1]                           
+ 23                -1  1   1182720  models.common.C3                        [512, 512, 1, False]          
+ 24                17  1       516  models.common.YOLOv5WithClassification  [128, 4]                      
+ 25      [17, 20, 23]  1     24273  models.yolo.Detect                      [4, [[10, 13, 16, 30, 33, 23], [
+30, 61, 62, 45, 59, 119], [116, 90, 156, 198, 373, 326]], [128, 256, 512]]
+--- Debug: model forward outputs: 2 items ---
+    Output 0 type: <class 'list'>
+    Output 1 shape: [1, 4]
+--- Debug: computed strides = [8.0, 16.0, 32.0] ---
+YOLOv5sc summary: 219 layers, 7030933 parameters, 7030933 gradients
+
+
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels...:   0%|
+
+        | 0/834 [00:00<?, ?it/s]/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:3
+5: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with '
+LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels... 1 images
+, 0 backgrounds, 0 corrupt:   0%|          | 1/834 [00:05<1:11:22,  5.14s/it]
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels... 59 image
+s, 0 backgrounds, 0 corrupt:   7%|▋         | 59/834 [00:05<00:48, 15.87it/s]
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels... 125 imag
+es, 0 backgrounds, 0 corrupt:  15%|█▍        | 125/834 [00:05<00:17, 39.67it/s]
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels... 282 imag
+es, 0 backgrounds, 0 corrupt:  34%|███▍      | 282/834 [00:05<00:04, 116.11it/s]
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels... 693 imag
+es, 1 backgrounds, 0 corrupt:  83%|████████▎ | 694/834 [00:05<00:00, 383.18it/s]
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels... 832 imag
+es, 2 backgrounds, 0 corrupt: 100%|██████████| 834/834 [00:05<00:00, 149.24it/s]
+train: New cache created: /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels.c
+ache
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels...:   0%|
+
+    | 0/208 [00:00<?, ?it/s]/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: N
+otOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'Libr
+eSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 1 images, 0 
+backgrounds, 0 corrupt:   0%|          | 1/208 [00:10<36:57, 10.71s/it]
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 17 images, 0
+ backgrounds, 0 corrupt:   8%|▊         | 17/208 [00:10<01:26,  2.20it/s]
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 46 images, 0
+ backgrounds, 0 corrupt:  22%|██▏       | 46/208 [00:10<00:21,  7.49it/s]
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 68 images, 0
+ backgrounds, 0 corrupt:  33%|███▎      | 68/208 [00:11<00:11, 12.66it/s]
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 90 images, 0
+ backgrounds, 0 corrupt:  43%|████▎     | 90/208 [00:11<00:05, 19.78it/s]
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 117 images, 
+0 backgrounds, 0 corrupt:  56%|█████▋    | 117/208 [00:11<00:02, 31.52it/s]
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 139 images, 
+0 backgrounds, 0 corrupt:  67%|██████▋   | 139/208 [00:11<00:01, 41.78it/s]
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 208 images, 
+0 backgrounds, 0 corrupt: 100%|██████████| 208/208 [00:11<00:00, 18.02it/s]
+val: New cache created: /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels.cache
+
+Epoch 1/100:   0%|          | 0/53 [00:00<?, ?it/s]/Users/mac/Library/Python/3.9/lib/python/site-packages/ur
+llib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module
+ is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+
+Epoch 1/100:   0%|          | 0/53 [00:17<?, ?it/s]
+Traceback (most recent call last):
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/train_joint_optimized.py", line 334, in <module>
+    trainer.train()
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/train_joint_optimized.py", line 294, in train
+    train_loss = self.train_epoch(epoch)
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/train_joint_optimized.py", line 204, in train_epoch
+    det_loss, det_loss_items = self.compute_loss(det_pred, targets)
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/loss.py", line 166, in __call__
+    t[range(n), tcls[i]] = self.cp
+IndexError: index 3 is out of bounds for dimension 1 with size 3
+
+
+```
+
+---
+
+問題仍然存在。讓我檢查一下 `loss.py` 中的 `build_targets` 方法，看看為什麼 `tcls[i]` 包含索引 3：
+
+
+---
+
+Read file: yolov5c/utils/loss.py
+
+---
+
+問題在於第267行：`tcls.append(c)`，這裡 `c` 是從 targets 中提取的類別索引。我們的數據集中有類別索引 3（TR），但檢測頭的輸出只有3個類別（0,1,2）。
+
+讓我檢查一下轉換後的標籤文件，看看類別索引的分布：
+
+
+---
+
+```bash
+grep -h "^[0-9]" regurgitation_converted_onehot/train/labels/*.txt | cut -d' ' -f1 | sort | uniq -c
+```
+
+```
+ 256 0
+ 252 1
+  68 2
+ 256 3
+
+```
+
+---
+
+確實有類別索引 3！問題在於我們的檢測頭輸出只有3個類別，但數據集有4個類別。讓我檢查一下 `yolov5sc.yaml` 中的 `nc` 參數是否正確傳遞給了 `Detect` 層：
+
+
+---
+
+Read file: yolov5c/models/yolo.py
+
+---
+
+我看到問題了！在 `DetectionModel.__init__` 中，第207行：`if nc and nc != self.yaml['nc']:`，這裡檢查是否傳入了 `nc` 參數，如果傳入了且與 yaml 中的不同，就會覆蓋。
+
+但是在 `train_joint_optimized.py` 中，我們創建模型時沒有傳入 `nc` 參數，所以使用的是 yaml 中的 `nc=4`。問題可能在於 `parse_model` 函數沒有正確處理 `nc` 參數。
+
+讓我檢查一下 `parse_model` 函數：
+
+
+---
+
+Read file: yolov5c/models/yolo.py
+
+---
+
+我看到問題了！在 `parse_model` 函數中，第481行：`elif m in {Detect, Segment}:`，這裡處理 `Detect` 層時，沒有正確傳遞 `nc` 參數。
+
+讓我檢查一下 `Detect` 層是如何被創建的：
+
+
+---
+
+Read file: yolov5c/models/yolo.py
+
+---
+
+我看到問題了！在 `parse_model` 函數中，第481行：`elif m in {Detect, Segment}:`，這裡處理 `Detect` 層時，沒有正確傳遞 `nc` 參數。
+
+讓我檢查一下 `yolov5sc.yaml` 中 `Detect` 層的參數：
+
+
+---
+
+Read file: yolov5c/models/yolov5sc.yaml
+
+---
+
+我看到問題了！第25行：`[[17, 20, 23], 1, Detect, [nc, anchors]]`，這裡使用了 `nc` 變數，但在 `parse_model` 函數中，這個變數沒有被正確處理。
+
+讓我修正 `parse_model` 函數中的 `Detect` 層處理：
+
+
+---
+
+<details><summary>Edit file: yolov5c/models/yolo.py</summary>
+
+undefined
+
+**Chunk 1**
+Lines added: 3, lines removed: undefined
+
+```diff
+@@ -481,4 +481,7 @@
+              if m is Segment:
+                  args[3] = make_divisible(args[3] * gw, 8)
++             # Ensure nc is passed correctly to Detect layer
++             if m is Detect and len(args) > 0:
++                 args[0] = nc  # Replace nc with actual number of classes
+              c2 = sum(ch[x] for x in f)
+          elif m is Contract:
+```
+
+</details>
+
+---
+
+現在讓我們重新執行訓練：
+
+
+---
+
+```bash
+python3 yolov5c/auto_convert_and_train.py
+```
+
+```
+🚀 開始自動轉換和訓練流程
+清理舊的轉換結果: regurgitation_converted_onehot
+
+==================================================
+執行: 轉換數據集
+命令: python3 yolov5c/convert_regurgitation_dataset.py "Regurgitation-YOLODataset-1new" "regurgitation_conve
+rted_onehot"
+==================================================
+✅ 轉換數據集 成功完成
+輸出: split...
+Found 306 label files
+Conversion completed:
+  Success: 306
+  Errors: 0
+Copying 306 images from Regurgitation-YOLODataset-1new/test/images to regurgitation_converted_onehot/test/im
+ages
+
+Creating validation set from train set...
+Moving 208 files to validation set
+Train set: 834 images
+Validation set: 208 images
+Created data.yaml at regurgitation_converted_onehot/data.yaml
+
+Dataset conversion completed!
+Output directory: regurgitation_converted_onehot
+Class names: ['AR', 'MR', 'PR', 'TR']
+
+
+📊 檢查轉換結果:
+  train: 832 個標籤文件
+    範例格式: 0 0.426933 0.480997 0.164991 0.154139
+  val: 208 個標籤文件
+    範例格式: 3 0.471768 0.532516 0.115024 0.152709
+  test: 306 個標籤文件
+    範例格式: 3 0.351116 0.626689 0.175204 0.287162
+
+🎯 開始聯合訓練
+
+==================================================
+執行: 聯合訓練
+命令: python3 yolov5c/train_joint_optimized.py --data regurgitation_converted_onehot/data.yaml --epochs 100 
+--batch-size 16 --imgsz 640
+==================================================
+❌ 聯合訓練 失敗
+錯誤: /Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urll
+ib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: http
+s://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+YOLOv5 🚀 2025-7-29 Python-3.9.6 torch-2.7.1 CPU
+
+
+                 from  n    params  module                                  arguments                     
+  0                -1  1      3520  models.common.Conv                      [3, 32, 6, 2, 2]              
+  1                -1  1     18560  models.common.Conv                      [32, 64, 3, 2]                
+  2                -1  1     18816  models.common.C3                        [64, 64, 1]                   
+  3                -1  1     73984  models.common.Conv                      [64, 128, 3, 2]               
+  4                -1  1    115712  models.common.C3                        [128, 128, 2]                 
+  5                -1  1    295424  models.common.Conv                      [128, 256, 3, 2]              
+  6                -1  1    625152  models.common.C3                        [256, 256, 3]                 
+  7                -1  1   1180672  models.common.Conv                      [256, 512, 3, 2]              
+  8                -1  1   1182720  models.common.C3                        [512, 512, 1]                 
+  9                -1  1    656896  models.common.SPPF                      [512, 512, 5]                 
+ 10                -1  1    131584  models.common.Conv                      [512, 256, 1, 1]              
+ 11                -1  1         0  torch.nn.modules.upsampling.Upsample    [None, 2, 'nearest']          
+ 12           [-1, 6]  1         0  models.common.Concat                    [1]                           
+ 13                -1  1    361984  models.common.C3                        [512, 256, 1, False]          
+ 14                -1  1     33024  models.common.Conv                      [256, 128, 1, 1]              
+ 15                -1  1         0  torch.nn.modules.upsampling.Upsample    [None, 2, 'nearest']          
+ 16           [-1, 4]  1         0  models.common.Concat                    [1]                           
+ 17                -1  1     90880  models.common.C3                        [256, 128, 1, False]          
+ 18                -1  1    147712  models.common.Conv                      [128, 128, 3, 2]              
+ 19          [-1, 14]  1         0  models.common.Concat                    [1]                           
+ 20                -1  1    296448  models.common.C3                        [256, 256, 1, False]          
+ 21                -1  1    590336  models.common.Conv                      [256, 256, 3, 2]              
+ 22          [-1, 10]  1         0  models.common.Concat                    [1]                           
+ 23                -1  1   1182720  models.common.C3                        [512, 512, 1, False]          
+ 24                17  1       516  models.common.YOLOv5WithClassification  [128, 4]                      
+ 25      [17, 20, 23]  1     24273  models.yolo.Detect                      [4, [[10, 13, 16, 30, 33, 23], [
+30, 61, 62, 45, 59, 119], [116, 90, 156, 198, 373, 326]], [128, 256, 512]]
+--- Debug: model forward outputs: 2 items ---
+    Output 0 type: <class 'list'>
+    Output 1 shape: [1, 4]
+--- Debug: computed strides = [8.0, 16.0, 32.0] ---
+YOLOv5sc summary: 219 layers, 7030933 parameters, 7030933 gradients
+
+
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels...:   0%|
+
+        | 0/834 [00:00<?, ?it/s]/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:3
+5: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with '
+LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels... 1 images
+, 0 backgrounds, 0 corrupt:   0%|          | 1/834 [00:10<2:22:42, 10.28s/it]
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels... 111 imag
+es, 0 backgrounds, 0 corrupt:  13%|█▎        | 111/834 [00:10<00:47, 15.17it/s]
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels... 338 imag
+es, 0 backgrounds, 0 corrupt:  41%|████      | 338/834 [00:10<00:08, 58.48it/s]
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels... 653 imag
+es, 1 backgrounds, 0 corrupt:  78%|███████▊  | 654/834 [00:10<00:01, 141.18it/s]
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels... 832 imag
+es, 2 backgrounds, 0 corrupt: 100%|██████████| 834/834 [00:10<00:00, 77.58it/s]
+train: New cache created: /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels.c
+ache
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels...:   0%|
+
+    | 0/208 [00:00<?, ?it/s]/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: N
+otOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'Libr
+eSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 1 images, 0 
+backgrounds, 0 corrupt:   0%|          | 1/208 [00:09<33:53,  9.82s/it]
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 15 images, 0
+ backgrounds, 0 corrupt:   7%|▋         | 15/208 [00:09<01:31,  2.10it/s]
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 41 images, 0
+ backgrounds, 0 corrupt:  20%|█▉        | 41/208 [00:10<00:23,  7.26it/s]
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 60 images, 0
+ backgrounds, 0 corrupt:  29%|██▉       | 60/208 [00:10<00:11, 12.34it/s]
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 208 images, 
+0 backgrounds, 0 corrupt: 100%|██████████| 208/208 [00:10<00:00, 20.32it/s]
+val: New cache created: /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels.cache
+
+Epoch 1/100:   0%|          | 0/53 [00:00<?, ?it/s]/Users/mac/Library/Python/3.9/lib/python/site-packages/ur
+llib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module
+ is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+
+Epoch 1/100:   0%|          | 0/53 [00:13<?, ?it/s]
+Traceback (most recent call last):
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/train_joint_optimized.py", line 334, in <module>
+    trainer.train()
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/train_joint_optimized.py", line 294, in train
+    train_loss = self.train_epoch(epoch)
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/train_joint_optimized.py", line 204, in train_epoch
+    det_loss, det_loss_items = self.compute_loss(det_pred, targets)
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/loss.py", line 166, in __call__
+    t[range(n), tcls[i]] = self.cp
+IndexError: index 91 is out of bounds for dimension 0 with size 16
+
+
+```
+
+---
+
+現在錯誤變成了 `IndexError: index 91 is out of bounds for dimension 0 with size 16`，這表示 `tcls[i]` 包含索引 91，但 `t` 的形狀只有 16 個元素。這是一個不同的問題，可能是因為 `build_targets` 方法中的索引計算有問題。
+
+讓我檢查一下 `build_targets` 方法中的問題：
+
+
+---
+
+Read file: yolov5c/utils/loss.py
+
+---
+
+問題在於第267行：`tcls.append(c)`，這裡 `c` 是從 targets 中提取的類別索引。索引 91 表示這是一個非常大的類別索引，這可能是因為 `bc` 的解析有問題。
+
+讓我檢查一下第260行：`bc, gxy, gwh, a = t.chunk(4, 1)`，這裡將 `t` 分成了4部分，但 `t` 的形狀可能不正確。
+
+問題可能是在第240行：`t = targets * gain`，這裡 `targets` 的形狀可能不正確。讓我檢查一下 `targets` 的形狀：
+
+
+---
+
+<details><summary>Edit file: yolov5c/utils/loss.py</summary>
+
+undefined
+
+**Chunk 1**
+Lines added: 2, lines removed: undefined
+
+```diff
+@@ -233,4 +233,6 @@
+              print(f"Debug loss.py - i={i}, shape={shape}, len(shape)={len(shape)}")
+              print(f"Debug loss.py - p[{i}].shape={p[i].shape}")
++             print(f"Debug loss.py - targets.shape={targets.shape}")
++             print(f"Debug loss.py - targets content: {targets[:5]}")  # Show first 5 targets
+              
+              # Ensure shape has correct dimensions for YOLOv5
+```
+
+</details>
+
+---
+
+現在讓我們重新執行訓練，看看 debug 信息：
+
+
+---
+
+```bash
+python3 yolov5c/auto_convert_and_train.py
+```
+
+```
+🚀 開始自動轉換和訓練流程
+清理舊的轉換結果: regurgitation_converted_onehot
+
+==================================================
+執行: 轉換數據集
+命令: python3 yolov5c/convert_regurgitation_dataset.py "Regurgitation-YOLODataset-1new" "regurgitation_conve
+rted_onehot"
+==================================================
+✅ 轉換數據集 成功完成
+輸出: split...
+Found 306 label files
+Conversion completed:
+  Success: 306
+  Errors: 0
+Copying 306 images from Regurgitation-YOLODataset-1new/test/images to regurgitation_converted_onehot/test/im
+ages
+
+Creating validation set from train set...
+Moving 208 files to validation set
+Train set: 834 images
+Validation set: 208 images
+Created data.yaml at regurgitation_converted_onehot/data.yaml
+
+Dataset conversion completed!
+Output directory: regurgitation_converted_onehot
+Class names: ['AR', 'MR', 'PR', 'TR']
+
+
+📊 檢查轉換結果:
+  train: 833 個標籤文件
+    範例格式: 3 0.471768 0.532516 0.115024 0.152709
+  val: 207 個標籤文件
+    範例格式: 2 0.561621 0.398023 0.199267 0.310087
+  test: 306 個標籤文件
+    範例格式: 3 0.351116 0.626689 0.175204 0.287162
+
+🎯 開始聯合訓練
+
+==================================================
+執行: 聯合訓練
+命令: python3 yolov5c/train_joint_optimized.py --data regurgitation_converted_onehot/data.yaml --epochs 100 
+--batch-size 16 --imgsz 640
+==================================================
+❌ 聯合訓練 失敗
+錯誤: /Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urll
+ib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: http
+s://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+YOLOv5 🚀 2025-7-29 Python-3.9.6 torch-2.7.1 CPU
+
+
+                 from  n    params  module                                  arguments                     
+  0                -1  1      3520  models.common.Conv                      [3, 32, 6, 2, 2]              
+  1                -1  1     18560  models.common.Conv                      [32, 64, 3, 2]                
+  2                -1  1     18816  models.common.C3                        [64, 64, 1]                   
+  3                -1  1     73984  models.common.Conv                      [64, 128, 3, 2]               
+  4                -1  1    115712  models.common.C3                        [128, 128, 2]                 
+  5                -1  1    295424  models.common.Conv                      [128, 256, 3, 2]              
+  6                -1  1    625152  models.common.C3                        [256, 256, 3]                 
+  7                -1  1   1180672  models.common.Conv                      [256, 512, 3, 2]              
+  8                -1  1   1182720  models.common.C3                        [512, 512, 1]                 
+  9                -1  1    656896  models.common.SPPF                      [512, 512, 5]                 
+ 10                -1  1    131584  models.common.Conv                      [512, 256, 1, 1]              
+ 11                -1  1         0  torch.nn.modules.upsampling.Upsample    [None, 2, 'nearest']          
+ 12           [-1, 6]  1         0  models.common.Concat                    [1]                           
+ 13                -1  1    361984  models.common.C3                        [512, 256, 1, False]          
+ 14                -1  1     33024  models.common.Conv                      [256, 128, 1, 1]              
+ 15                -1  1         0  torch.nn.modules.upsampling.Upsample    [None, 2, 'nearest']          
+ 16           [-1, 4]  1         0  models.common.Concat                    [1]                           
+ 17                -1  1     90880  models.common.C3                        [256, 128, 1, False]          
+ 18                -1  1    147712  models.common.Conv                      [128, 128, 3, 2]              
+ 19          [-1, 14]  1         0  models.common.Concat                    [1]                           
+ 20                -1  1    296448  models.common.C3                        [256, 256, 1, False]          
+ 21                -1  1    590336  models.common.Conv                      [256, 256, 3, 2]              
+ 22          [-1, 10]  1         0  models.common.Concat                    [1]                           
+ 23                -1  1   1182720  models.common.C3                        [512, 512, 1, False]          
+ 24                17  1       516  models.common.YOLOv5WithClassification  [128, 4]                      
+ 25      [17, 20, 23]  1     24273  models.yolo.Detect                      [4, [[10, 13, 16, 30, 33, 23], [
+30, 61, 62, 45, 59, 119], [116, 90, 156, 198, 373, 326]], [128, 256, 512]]
+--- Debug: model forward outputs: 2 items ---
+    Output 0 type: <class 'list'>
+    Output 1 shape: [1, 4]
+--- Debug: computed strides = [8.0, 16.0, 32.0] ---
+YOLOv5sc summary: 219 layers, 7030933 parameters, 7030933 gradients
+
+
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels...:   0%|
+
+        | 0/834 [00:00<?, ?it/s]/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:3
+5: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with '
+LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels... 1 images
+, 0 backgrounds, 0 corrupt:   0%|          | 1/834 [00:04<1:05:19,  4.71s/it]
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels... 103 imag
+es, 0 backgrounds, 0 corrupt:  12%|█▏        | 103/834 [00:04<00:24, 30.21it/s]
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels... 597 imag
+es, 0 backgrounds, 0 corrupt:  72%|███████▏  | 597/834 [00:04<00:01, 228.16it/s]
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels... 833 imag
+es, 1 backgrounds, 0 corrupt: 100%|██████████| 834/834 [00:04<00:00, 168.65it/s]
+train: New cache created: /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels.c
+ache
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels...:   0%|
+
+    | 0/208 [00:00<?, ?it/s]/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: N
+otOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'Libr
+eSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 1 images, 0 
+backgrounds, 0 corrupt:   0%|          | 1/208 [00:11<38:15, 11.09s/it]
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 61 images, 0
+ backgrounds, 0 corrupt:  29%|██▉       | 61/208 [00:11<00:19,  7.72it/s]
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 207 images, 
+1 backgrounds, 0 corrupt: 100%|██████████| 208/208 [00:11<00:00, 18.46it/s]
+val: New cache created: /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels.cache
+
+Epoch 1/100:   0%|          | 0/53 [00:00<?, ?it/s]/Users/mac/Library/Python/3.9/lib/python/site-packages/ur
+llib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module
+ is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+
+Epoch 1/100:   0%|          | 0/53 [00:15<?, ?it/s]
+Traceback (most recent call last):
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/train_joint_optimized.py", line 334, in <module>
+    trainer.train()
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/train_joint_optimized.py", line 294, in train
+    train_loss = self.train_epoch(epoch)
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/train_joint_optimized.py", line 204, in train_epoch
+    det_loss, det_loss_items = self.compute_loss(det_pred, targets)
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/loss.py", line 166, in __call__
+    t[range(n), tcls[i]] = self.cp
+IndexError: index 3 is out of bounds for dimension 1 with size 3
+Error in atexit._run_exitfuncs:
+Traceback (most recent call last):
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/pyt
+hon3.9/multiprocessing/popen_fork.py", line 27, in poll
+    pid, sts = os.waitpid(self.pid, flag)
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/torch/utils/data/_utils/signal_handling.py", 
+line 73, in handler
+    _error_if_any_worker_fails()
+RuntimeError: DataLoader worker (pid 62256) is killed by signal: Terminated: 15. 
+
+
+```
+
+---
+
+我們又回到了原來的錯誤：`IndexError: index 3 is out of bounds for dimension 1 with size 3`。這表示檢測頭的輸出仍然只有3個類別，而不是4個類別。
+
+讓我檢查一下 debug 信息，看看 `targets` 的內容：
+
+
+---
+
+```bash
+python3 yolov5c/train_joint_optimized.py --data regurgitation_converted_onehot/data.yaml --epochs 1 --batch-size 1 --imgsz 640 2>&1 | head -100
+```
+
+```
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+YOLOv5 🚀 2025-7-29 Python-3.9.6 torch-2.7.1 CPU
+
+
+                 from  n    params  module                                  arguments                     
+  0                -1  1      3520  models.common.Conv                      [3, 32, 6, 2, 2]              
+  1                -1  1     18560  models.common.Conv                      [32, 64, 3, 2]                
+  2                -1  1     18816  models.common.C3                        [64, 64, 1]                   
+  3                -1  1     73984  models.common.Conv                      [64, 128, 3, 2]               
+  4                -1  1    115712  models.common.C3                        [128, 128, 2]                 
+  5                -1  1    295424  models.common.Conv                      [128, 256, 3, 2]              
+  6                -1  1    625152  models.common.C3                        [256, 256, 3]                 
+  7                -1  1   1180672  models.common.Conv                      [256, 512, 3, 2]              
+  8                -1  1   1182720  models.common.C3                        [512, 512, 1]                 
+  9                -1  1    656896  models.common.SPPF                      [512, 512, 5]                 
+ 10                -1  1    131584  models.common.Conv                      [512, 256, 1, 1]              
+ 11                -1  1         0  torch.nn.modules.upsampling.Upsample    [None, 2, 'nearest']          
+ 12           [-1, 6]  1         0  models.common.Concat                    [1]                           
+ 13                -1  1    361984  models.common.C3                        [512, 256, 1, False]          
+ 14                -1  1     33024  models.common.Conv                      [256, 128, 1, 1]              
+ 15                -1  1         0  torch.nn.modules.upsampling.Upsample    [None, 2, 'nearest']          
+ 16           [-1, 4]  1         0  models.common.Concat                    [1]                           
+ 17                -1  1     90880  models.common.C3                        [256, 128, 1, False]          
+ 18                -1  1    147712  models.common.Conv                      [128, 128, 3, 2]              
+ 19          [-1, 14]  1         0  models.common.Concat                    [1]                           
+ 20                -1  1    296448  models.common.C3                        [256, 256, 1, False]          
+ 21                -1  1    590336  models.common.Conv                      [256, 256, 3, 2]              
+ 22          [-1, 10]  1         0  models.common.Concat                    [1]                           
+ 23                -1  1   1182720  models.common.C3                        [512, 512, 1, False]          
+ 24                17  1       516  models.common.YOLOv5WithClassification  [128, 4]                      
+ 25      [17, 20, 23]  1     24273  models.yolo.Detect                      [4, [[10, 13, 16, 30, 33, 23], [
+30, 61, 62, 45, 59, 119], [116, 90, 156, 198, 373, 326]], [128, 256, 512]]
+--- Debug: model forward outputs: 2 items ---
+    Output 0 type: <class 'list'>
+    Output 1 shape: [1, 4]
+--- Debug: computed strides = [8.0, 16.0, 32.0] ---
+YOLOv5sc summary: 219 layers, 7030933 parameters, 7030933 gradients
+
+Layer 0: f=-1, ch=[3]
+Checking f=-1 at layer i=0
+Layer 1: f=-1, ch=[32]
+Checking f=-1 at layer i=1
+Layer 2: f=-1, ch=[32, 64]
+Checking f=-1 at layer i=2
+Layer 3: f=-1, ch=[32, 64, 64]
+Checking f=-1 at layer i=3
+Layer 4: f=-1, ch=[32, 64, 64, 128]
+Checking f=-1 at layer i=4
+Layer 5: f=-1, ch=[32, 64, 64, 128, 128]
+Checking f=-1 at layer i=5
+Layer 6: f=-1, ch=[32, 64, 64, 128, 128, 256]
+Checking f=-1 at layer i=6
+Layer 7: f=-1, ch=[32, 64, 64, 128, 128, 256, 256]
+Checking f=-1 at layer i=7
+Layer 8: f=-1, ch=[32, 64, 64, 128, 128, 256, 256, 512]
+Checking f=-1 at layer i=8
+Layer 9: f=-1, ch=[32, 64, 64, 128, 128, 256, 256, 512, 512]
+Checking f=-1 at layer i=9
+Layer 10: f=-1, ch=[32, 64, 64, 128, 128, 256, 256, 512, 512, 512]
+Checking f=-1 at layer i=10
+Layer 11: f=-1, ch=[32, 64, 64, 128, 128, 256, 256, 512, 512, 512, 256]
+Checking f=-1 at layer i=11
+Layer 12: f=[-1, 6], ch=[32, 64, 64, 128, 128, 256, 256, 512, 512, 512, 256, 256]
+Checking list f=[-1, 6] at layer i=12
+Layer 13: f=-1, ch=[32, 64, 64, 128, 128, 256, 256, 512, 512, 512, 256, 256, 512]
+Checking f=-1 at layer i=13
+Layer 14: f=-1, ch=[32, 64, 64, 128, 128, 256, 256, 512, 512, 512, 256, 256, 512, 256]
+Checking f=-1 at layer i=14
+Layer 15: f=-1, ch=[32, 64, 64, 128, 128, 256, 256, 512, 512, 512, 256, 256, 512, 256, 128]
+Checking f=-1 at layer i=15
+Layer 16: f=[-1, 4], ch=[32, 64, 64, 128, 128, 256, 256, 512, 512, 512, 256, 256, 512, 256, 128, 128]
+Checking list f=[-1, 4] at layer i=16
+Layer 17: f=-1, ch=[32, 64, 64, 128, 128, 256, 256, 512, 512, 512, 256, 256, 512, 256, 128, 128, 256]
+Checking f=-1 at layer i=17
+Layer 18: f=-1, ch=[32, 64, 64, 128, 128, 256, 256, 512, 512, 512, 256, 256, 512, 256, 128, 128, 256, 128]
+Checking f=-1 at layer i=18
+Layer 19: f=[-1, 14], ch=[32, 64, 64, 128, 128, 256, 256, 512, 512, 512, 256, 256, 512, 256, 128, 128, 256, 
+128, 128]
+Checking list f=[-1, 14] at layer i=19
+Layer 20: f=-1, ch=[32, 64, 64, 128, 128, 256, 256, 512, 512, 512, 256, 256, 512, 256, 128, 128, 256, 128, 1
+28, 256]
+Checking f=-1 at layer i=20
+Layer 21: f=-1, ch=[32, 64, 64, 128, 128, 256, 256, 512, 512, 512, 256, 256, 512, 256, 128, 128, 256, 128, 1
+28, 256, 256]
+Checking f=-1 at layer i=21
+Layer 22: f=[-1, 10], ch=[32, 64, 64, 128, 128, 256, 256, 512, 512, 512, 256, 256, 512, 256, 128, 128, 256, 
+128, 128, 256, 256, 256]
+Checking list f=[-1, 10] at layer i=22
+Layer 23: f=-1, ch=[32, 64, 64, 128, 128, 256, 256, 512, 512, 512, 256, 256, 512, 256, 128, 128, 256, 128, 1
+28, 256, 256, 256, 512]
+Checking f=-1 at layer i=23
+Layer 24: f=17, ch=[32, 64, 64, 128, 128, 256, 256, 512, 512, 512, 256, 256, 512, 256, 128, 128, 256, 128, 1
+28, 256, 256, 256, 512, 512]
+Checking f=17 at layer i=24
+Layer 25: f=[17, 20, 23], ch=[32, 64, 64, 128, 128, 256, 256, 512, 512, 512, 256, 256, 512, 256, 128, 128, 2
+56, 128, 128, 256, 256, 256, 512, 512, 4]
+Checking list f=[17, 20, 23] at layer i=25
+Concat layer inputs: [torch.Size([1, 256, 16, 16]), torch.Size([1, 256, 16, 16])]
+Concat layer inputs: [torch.Size([1, 128, 32, 32]), torch.Size([1, 128, 32, 32])]
+Concat layer inputs: [torch.Size([1, 128, 16, 16]), torch.Size([1, 128, 16, 16])]
+Concat layer inputs: [torch.Size([1, 256, 8, 8]), torch.Size([1, 256, 8, 8])]
+Concat layer inputs: [torch.Size([1, 256, 16, 16]), torch.Size([1, 256, 16, 16])]
+Concat layer inputs: [torch.Size([1, 128, 32, 32]), torch.Size([1, 128, 32, 32])]
+Concat layer inputs: [torch.Size([1, 128, 16, 16]), torch.Size([1, 128, 16, 16])]
+Concat layer inputs: [torch.Size([1, 256, 8, 8]), torch.Size([1, 256, 8, 8])]
+
+```
+
+---
+
+我看到問題了！在第25層（Detect層），`ch` 列表的最後一個值是 `4`，這表示 `YOLOv5WithClassification` 層輸出了4個通道。但是在 `parse_model` 函數中，這個值被錯誤地當作了 `Detect` 層的輸入通道數。
+
+讓我檢查一下 `parse_model` 函數中 `Detect` 層的處理：
+
+
+---
+
+Read file: yolov5c/models/yolo.py
+
+---
+
+我看到問題了！在第485行：`c2 = sum(ch[x] for x in f)`，這裡計算 `Detect` 層的輸出通道數時，包含了 `YOLOv5WithClassification` 層的輸出（4個通道），但這不應該影響 `Detect` 層的類別數。
+
+問題在於 `YOLOv5WithClassification` 層的輸出被添加到了 `ch` 列表中，但 `Detect` 層不應該使用這個值。
+
+讓我修正這個問題，讓 `YOLOv5WithClassification` 層的輸出不影響 `ch` 列表：
+
+
+---
+
+<details><summary>Edit file: yolov5c/models/yolo.py</summary>
+
+undefined
+
+**Chunk 1**
+Lines added: 1, lines removed: 1
+
+```diff
+@@ -497,5 +497,5 @@
+              in_channels = int(c1)
+              args = [in_channels, num_cls]
+-             c2 = num_cls
++             c2 = in_channels  # Don't change the channel count for subsequent layers
+          else:
+              c2 = c1
+```
+
+</details>
+
+---
+
+現在讓我們重新執行訓練：
+
+
+---
+
+```bash
+python3 yolov5c/auto_convert_and_train.py
+```
+
+```
+🚀 開始自動轉換和訓練流程
+清理舊的轉換結果: regurgitation_converted_onehot
+
+==================================================
+執行: 轉換數據集
+命令: python3 yolov5c/convert_regurgitation_dataset.py "Regurgitation-YOLODataset-1new" "regurgitation_conve
+rted_onehot"
+==================================================
+✅ 轉換數據集 成功完成
+輸出: split...
+Found 306 label files
+Conversion completed:
+  Success: 306
+  Errors: 0
+Copying 306 images from Regurgitation-YOLODataset-1new/test/images to regurgitation_converted_onehot/test/im
+ages
+
+Creating validation set from train set...
+Moving 208 files to validation set
+Train set: 834 images
+Validation set: 208 images
+Created data.yaml at regurgitation_converted_onehot/data.yaml
+
+Dataset conversion completed!
+Output directory: regurgitation_converted_onehot
+Class names: ['AR', 'MR', 'PR', 'TR']
+
+
+📊 檢查轉換結果:
+  train: 832 個標籤文件
+    範例格式: 0 0.426933 0.480997 0.164991 0.154139
+  val: 208 個標籤文件
+    範例格式: 3 0.471768 0.532516 0.115024 0.152709
+  test: 306 個標籤文件
+    範例格式: 3 0.351116 0.626689 0.175204 0.287162
+
+🎯 開始聯合訓練
+
+==================================================
+執行: 聯合訓練
+命令: python3 yolov5c/train_joint_optimized.py --data regurgitation_converted_onehot/data.yaml --epochs 100 
+--batch-size 16 --imgsz 640
+==================================================
+❌ 聯合訓練 失敗
+錯誤: /Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urll
+ib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: http
+s://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+YOLOv5 🚀 2025-7-29 Python-3.9.6 torch-2.7.1 CPU
+
+
+                 from  n    params  module                                  arguments                     
+  0                -1  1      3520  models.common.Conv                      [3, 32, 6, 2, 2]              
+  1                -1  1     18560  models.common.Conv                      [32, 64, 3, 2]                
+  2                -1  1     18816  models.common.C3                        [64, 64, 1]                   
+  3                -1  1     73984  models.common.Conv                      [64, 128, 3, 2]               
+  4                -1  1    115712  models.common.C3                        [128, 128, 2]                 
+  5                -1  1    295424  models.common.Conv                      [128, 256, 3, 2]              
+  6                -1  1    625152  models.common.C3                        [256, 256, 3]                 
+  7                -1  1   1180672  models.common.Conv                      [256, 512, 3, 2]              
+  8                -1  1   1182720  models.common.C3                        [512, 512, 1]                 
+  9                -1  1    656896  models.common.SPPF                      [512, 512, 5]                 
+ 10                -1  1    131584  models.common.Conv                      [512, 256, 1, 1]              
+ 11                -1  1         0  torch.nn.modules.upsampling.Upsample    [None, 2, 'nearest']          
+ 12           [-1, 6]  1         0  models.common.Concat                    [1]                           
+ 13                -1  1    361984  models.common.C3                        [512, 256, 1, False]          
+ 14                -1  1     33024  models.common.Conv                      [256, 128, 1, 1]              
+ 15                -1  1         0  torch.nn.modules.upsampling.Upsample    [None, 2, 'nearest']          
+ 16           [-1, 4]  1         0  models.common.Concat                    [1]                           
+ 17                -1  1     90880  models.common.C3                        [256, 128, 1, False]          
+ 18                -1  1    147712  models.common.Conv                      [128, 128, 3, 2]              
+ 19          [-1, 14]  1         0  models.common.Concat                    [1]                           
+ 20                -1  1    296448  models.common.C3                        [256, 256, 1, False]          
+ 21                -1  1    590336  models.common.Conv                      [256, 256, 3, 2]              
+ 22          [-1, 10]  1         0  models.common.Concat                    [1]                           
+ 23                -1  1   1182720  models.common.C3                        [512, 512, 1, False]          
+ 24                17  1       516  models.common.YOLOv5WithClassification  [128, 4]                      
+ 25      [17, 20, 23]  1     24273  models.yolo.Detect                      [4, [[10, 13, 16, 30, 33, 23], [
+30, 61, 62, 45, 59, 119], [116, 90, 156, 198, 373, 326]], [128, 256, 512]]
+--- Debug: model forward outputs: 2 items ---
+    Output 0 type: <class 'list'>
+    Output 1 shape: [1, 4]
+--- Debug: computed strides = [8.0, 16.0, 32.0] ---
+YOLOv5sc summary: 219 layers, 7030933 parameters, 7030933 gradients
+
+
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels...:   0%|
+
+        | 0/834 [00:00<?, ?it/s]/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:3
+5: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with '
+LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels... 1 images
+, 0 backgrounds, 0 corrupt:   0%|          | 1/834 [00:05<1:09:47,  5.03s/it]
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels... 110 imag
+es, 0 backgrounds, 0 corrupt:  13%|█▎        | 110/834 [00:05<00:23, 30.31it/s]
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels... 213 imag
+es, 0 backgrounds, 0 corrupt:  26%|██▌       | 213/834 [00:05<00:09, 68.25it/s]
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels... 525 imag
+es, 0 backgrounds, 0 corrupt:  63%|██████▎   | 525/834 [00:05<00:01, 224.68it/s]
+train: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels... 832 imag
+es, 2 backgrounds, 0 corrupt: 100%|██████████| 834/834 [00:05<00:00, 155.28it/s]
+train: New cache created: /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/train/labels.c
+ache
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels...:   0%|
+
+    | 0/208 [00:00<?, ?it/s]/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: N
+otOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'Libr
+eSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 1 images, 0 
+backgrounds, 0 corrupt:   0%|          | 1/208 [00:06<23:38,  6.85s/it]
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 70 images, 0
+ backgrounds, 0 corrupt:  34%|███▎      | 70/208 [00:06<00:09, 14.23it/s]
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 111 images, 
+0 backgrounds, 0 corrupt:  53%|█████▎    | 111/208 [00:07<00:03, 25.18it/s]
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 152 images, 
+0 backgrounds, 0 corrupt:  73%|███████▎  | 152/208 [00:07<00:01, 40.00it/s]
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 207 images, 
+0 backgrounds, 0 corrupt: 100%|█████████▉| 207/208 [00:07<00:00, 66.47it/s]
+val: Scanning /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels... 208 images, 
+0 backgrounds, 0 corrupt: 100%|██████████| 208/208 [00:07<00:00, 28.51it/s]
+val: New cache created: /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot/val/labels.cache
+
+Epoch 1/100:   0%|          | 0/53 [00:00<?, ?it/s]/Users/mac/Library/Python/3.9/lib/python/site-packages/ur
+llib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module
+ is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2
+ only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://gi
+thub.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/general.py:34: UserWarning: pkg_resources is deprecated a
+s an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated f
+or removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources as pkg
+
+Epoch 1/100:   0%|          | 0/53 [00:12<?, ?it/s]
+Traceback (most recent call last):
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/train_joint_optimized.py", line 334, in <module>
+    trainer.train()
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/train_joint_optimized.py", line 294, in train
+    train_loss = self.train_epoch(epoch)
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/train_joint_optimized.py", line 204, in train_epoch
+    det_loss, det_loss_items = self.compute_loss(det_pred, targets)
+  File "/Users/mac/_codes/_Github/yolov5test/yolov5c/utils/loss.py", line 166, in __call__
+    t[range(n), tcls[i]] = self.cp
+IndexError: index 65 is out of bounds for dimension 0 with size 16
+
+
+```
+
+---
+
+
+
+---
+
+_**User**_
+
+加入 cursorrule , 此專案已 @/yolov5c @/Regurgitation-YOLODataset-1new 為主來進行檢測和分類的聯合訓練了.
+@/Regurgitation-YOLODataset-1new, 標籤檔案包含兩種格式：
+第一行：segmentation 格式（多個座標點）
+第二行：分類標籤格式（0 1 0）
+確認有工具來將這種混合格式轉換為標準的 YOLOv5 detection 格式，同時保留分類資訊 .
+
+---
+
+_**Assistant**_
+
+
+
+---
+

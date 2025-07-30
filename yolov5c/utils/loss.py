@@ -163,7 +163,15 @@ class ComputeLoss:
                 if self.nc > 1 and pi.shape[-1] > 5:
                     cls_pred = pi[..., 5:5+self.nc]
                     t = torch.full_like(cls_pred, self.cn, device=self.device)  # targets
-                    t[range(n), tcls[i]] = self.cp
+                    if i < len(tcls) and len(tcls[i]) > 0 and n > 0:
+                        # Ensure we don't exceed the number of targets
+                        max_targets = min(n, len(tcls[i]))
+                        if max_targets > 0:
+                            valid_indices = torch.arange(max_targets, device=self.device)
+                            target_classes = tcls[i][:max_targets]
+                            # Ensure target_classes indices are within valid range
+                            if target_classes.max() < self.nc:
+                                t[valid_indices, target_classes] = self.cp
                     lcls += self.BCEcls(cls_pred, t)  # BCE
             elif len(pi.shape) == 3:
                 # Validation shape: [batch, anchors*height*width, features]
@@ -232,6 +240,8 @@ class ComputeLoss:
             # Debug: Check shape
             print(f"Debug loss.py - i={i}, shape={shape}, len(shape)={len(shape)}")
             print(f"Debug loss.py - p[{i}].shape={p[i].shape}")
+            print(f"Debug loss.py - targets.shape={targets.shape}")
+            print(f"Debug loss.py - targets content: {targets[:5]}")  # Show first 5 targets
             
             # Ensure shape has correct dimensions for YOLOv5
             if len(shape) == 5:
@@ -281,10 +291,12 @@ class ComputeLoss:
 
         # Ensure we have the correct number of indices
         while len(indices) < self.nl:
-            indices.append((torch.zeros(0, dtype=torch.long), torch.zeros(0, dtype=torch.long), 
-                           torch.zeros(0, dtype=torch.long), torch.zeros(0, dtype=torch.long)))
-            tbox.append(torch.zeros((0, 4)))
-            anch.append(torch.zeros((0, 2)))
-            tcls.append(torch.zeros(0, dtype=torch.long))
+            indices.append((torch.zeros(0, dtype=torch.long, device=self.device), 
+                           torch.zeros(0, dtype=torch.long, device=self.device), 
+                           torch.zeros(0, dtype=torch.long, device=self.device), 
+                           torch.zeros(0, dtype=torch.long, device=self.device)))
+            tbox.append(torch.zeros(0, 4, device=self.device))
+            anch.append(torch.zeros(0, 2, device=self.device))
+            tcls.append(torch.zeros(0, dtype=torch.long, device=self.device))
 
         return tcls, tbox, indices, anch

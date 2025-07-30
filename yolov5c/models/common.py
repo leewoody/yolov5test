@@ -908,7 +908,7 @@ class YOLOv5WithClassification(nn.Module):
         x = self.avgpool(x)  # Pooling to (1, 1)
         x = self.flatten(x)  # Flatten to (batch_size, in_channels)
         x = self.dropout(x)  # Apply dropout for regularization
-        x = self.fc(x)  # Fully connected layer
+        x = self.fc(x)  # Fully connected layer (outputs logits for BCE loss)
         return x
 
     

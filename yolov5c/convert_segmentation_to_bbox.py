@@ -36,16 +36,14 @@ def parse_segmentation_line(line):
         return None, None
 
 def parse_classification_line(line):
-    """Parse classification line and return the class index"""
+    """Parse classification line and keep original one-hot encoding"""
     try:
         parts = line.strip().split()
-        # Find the index of "1" in the one-hot encoding
-        for i, val in enumerate(parts):
-            if val == "1":
-                return i
-        return 0  # Default to 0 if no "1" found
+        # Keep original one-hot encoding format
+        # e.g., "0 1 0" -> "0 1 0", "1 0 0" -> "1 0 0"
+        return " ".join(parts) if parts else "0 0 0"
     except (ValueError, IndexError):
-        return 0
+        return "0 0 0"  # Default to [0, 0, 0]
 
 def points_to_bbox(points):
     """Convert polygon points to bounding box (x_center, y_center, width, height)"""
@@ -94,12 +92,10 @@ def convert_label_file(input_file, output_file):
         
         x_center, y_center, width, height = bbox
         
-        # Write output in YOLOv5 format
+        # Write output in YOLOv5 format (only bbox, no classification line)
         with open(output_file, 'w') as f:
             # Write bbox line (class x_center y_center width height)
             f.write(f"{class_id} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
-            # Write classification line (single digit)
-            f.write(f"{cls_label}\n")
         
         return True
         

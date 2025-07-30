@@ -62,7 +62,7 @@ class JointTrainer:
     def create_model(self):
         """創建支援 joint detection + classification 的模型"""
         # 使用自定義配置
-        model = Model('models/yolov5sc.yaml', ch=3, nc=self.nc)
+        model = Model('yolov5c/models/yolov5sc.yaml', ch=3, nc=self.nc)
         
         # 載入預訓練權重（過濾不相容的層）
         if os.path.exists(self.weights):
@@ -145,33 +145,34 @@ class JointTrainer:
         return train_loader, val_loader
     
     def extract_classification_labels(self, targets, paths):
-        """從標籤文件中提取分類標籤"""
+        """從原始標籤文件中提取分類標籤（one-hot encoding）"""
         cls_targets = []
         
         for i, path in enumerate(paths):
-            # 獲取對應的標籤文件路徑
-            label_path = str(path).replace('/images/', '/labels/').replace('.jpg', '.txt').replace('.png', '.txt')
+            # 獲取對應的原始標籤文件路徑
+            # 從轉換後的數據集路徑映射回原始數據集路徑
+            label_path = str(path).replace('regurgitation_converted_onehot', 'Regurgitation-YOLODataset-1new')
+            label_path = label_path.replace('/images/', '/labels/').replace('.jpg', '.txt').replace('.png', '.txt')
             
             try:
                 with open(label_path, 'r') as f:
                     lines = f.readlines()
                 
-                # 查找分類標籤（最後一行，只有一個數字）
-                classification_label = 0  # 默認值
-                for line in lines:
-                    line = line.strip()
-                    if line and len(line.split()) == 1:
-                        # 單個數字，應該是分類標籤
-                        classification_label = int(line)
-                        break
+                # 查找分類標籤（第二行，one-hot encoding）
+                classification_label = [0, 0, 0]  # 默認值 [AR, MR, PR]
+                if len(lines) >= 2:
+                    line = lines[1].strip()  # 第二行是分類標籤
+                    if line and len(line.split()) == 3:  # one-hot encoding: "0 1 0"
+                        parts = line.split()
+                        classification_label = [float(x) for x in parts]
                 
                 cls_targets.append(classification_label)
                 
             except Exception as e:
                 print(f"警告: 無法讀取分類標籤 {label_path}: {e}")
-                cls_targets.append(0)  # 默認值
+                cls_targets.append([0, 0, 0])  # 默認值
         
-        return torch.tensor(cls_targets, dtype=torch.long, device=self.device)
+        return torch.tensor(cls_targets, dtype=torch.float, device=self.device)
     
     def train_epoch(self, epoch):
         """訓練一個 epoch"""
@@ -202,9 +203,10 @@ class JointTrainer:
             # 計算檢測損失
             det_loss, det_loss_items = self.compute_loss(det_pred, targets)
             
-            # 計算分類損失
+            # 計算分類損失（one-hot encoding）
             if cls_pred is not None:
-                cls_loss = F.cross_entropy(cls_pred, cls_targets)
+                # 使用 BCE loss 處理 one-hot encoding
+                cls_loss = F.binary_cross_entropy_with_logits(cls_pred, cls_targets)
             else:
                 cls_loss = torch.tensor(0.0, device=self.device)
             
@@ -269,7 +271,8 @@ class JointTrainer:
                 det_loss, _ = self.compute_loss(det_pred, targets)
                 
                 if cls_pred is not None:
-                    cls_loss = F.cross_entropy(cls_pred, cls_targets)
+                    # 使用 BCE loss 處理 one-hot encoding
+                    cls_loss = F.binary_cross_entropy_with_logits(cls_pred, cls_targets)
                 else:
                     cls_loss = torch.tensor(0.0, device=self.device)
                 
@@ -310,6 +313,22 @@ class JointTrainer:
         print("訓練完成！")
 
 if __name__ == "__main__":
-    data_yaml = "../regurgitation_joint_20250730/data.yaml"
-    trainer = JointTrainer(data_yaml)
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Joint Detection and Classification Training")
+    parser.add_argument("--data", type=str, required=True, help="Path to data.yaml file")
+    parser.add_argument("--weights", type=str, default="yolov5s.pt", help="Initial weights path")
+    parser.add_argument("--epochs", type=int, default=100, help="Number of epochs")
+    parser.add_argument("--batch-size", type=int, default=16, help="Batch size")
+    parser.add_argument("--imgsz", type=int, default=640, help="Image size")
+    
+    args = parser.parse_args()
+    
+    trainer = JointTrainer(
+        data_yaml=args.data,
+        weights=args.weights,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        imgsz=args.imgsz
+    )
     trainer.train()

@@ -1,0 +1,10 @@
+names:
+- AR
+- MR
+- PR
+- TR
+nc: 4
+path: /Users/mac/_codes/_Github/yolov5test/regurgitation_converted_onehot
+test: test/images
+train: train/images
+val: val/images

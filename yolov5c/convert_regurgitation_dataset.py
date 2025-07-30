@@ -41,8 +41,8 @@ def convert_regurgitation_dataset(input_dir, output_dir):
     # Class names for regurgitation dataset
     class_names = ['AR', 'MR', 'PR', 'TR']
     
-    # Convert each split
-    for split in ['train', 'val', 'test']:
+    # Convert train and test splits
+    for split in ['train', 'test']:
         input_split_path = input_path / split
         output_split_path = output_path / split
         
@@ -69,6 +69,38 @@ def convert_regurgitation_dataset(input_dir, output_dir):
             
             for img_file in image_files:
                 shutil.copy2(img_file, output_images_dir / img_file.name)
+    
+    # Create validation set from train set (20% split)
+    train_images_dir = output_path / 'train' / 'images'
+    train_labels_dir = output_path / 'train' / 'labels'
+    val_images_dir = output_path / 'val' / 'images'
+    val_labels_dir = output_path / 'val' / 'labels'
+    
+    if train_images_dir.exists():
+        import random
+        
+        # Get all train files
+        train_image_files = list(train_images_dir.glob("*"))
+        random.shuffle(train_image_files)
+        
+        # Split 20% for validation
+        val_count = int(len(train_image_files) * 0.2)
+        val_files = train_image_files[:val_count]
+        
+        print(f"\nCreating validation set from train set...")
+        print(f"Moving {len(val_files)} files to validation set")
+        
+        for img_file in val_files:
+            # Move image
+            shutil.move(str(img_file), str(val_images_dir / img_file.name))
+            
+            # Move corresponding label
+            label_file = train_labels_dir / (img_file.stem + '.txt')
+            if label_file.exists():
+                shutil.move(str(label_file), str(val_labels_dir / label_file.name))
+        
+        print(f"Train set: {len(list(train_images_dir.glob('*')))} images")
+        print(f"Validation set: {len(list(val_images_dir.glob('*')))} images")
     
     # Create data.yaml
     create_data_yaml(output_dir, class_names)
