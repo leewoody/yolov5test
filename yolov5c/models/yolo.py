@@ -120,6 +120,8 @@ class BaseModel(nn.Module):
 
     def _forward_once(self, x, profile=False, visualize=False):
         y, dt = [], []  # outputs
+        classification_output = None
+        
         for m in self.model:
             if m.f != -1:  # if not from previous layer
                 x = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j in m.f]  # from earlier layers
@@ -134,10 +136,22 @@ class BaseModel(nn.Module):
             if profile:
                 self._profile_one_layer(m, x, dt)
             x = m(x)  # run
-            y.append(x if m.i in self.save else None)  # save output
+            
+            # Check if this is the classification head
+            if hasattr(m, 'type') and 'YOLOv5WithClassification' in m.type:
+                classification_output = x
+                y.append(None)  # Don't save classification output in y
+            else:
+                y.append(x if m.i in self.save else None)  # save output
+                
             if visualize:
                 feature_visualization(x, m.type, m.i, save_dir=visualize)
-        return x
+        
+        # Return joint output if classification head exists
+        if classification_output is not None:
+            return x, classification_output
+        else:
+            return x
 
     def _profile_one_layer(self, m, x, dt):
         c = m == self.model[-1]  # is final layer, copy input as inplace fix
@@ -220,7 +234,10 @@ class DetectionModel(BaseModel):
             if isinstance(out, (list, tuple)):
                 LOGGER.info(f"--- Debug: model forward outputs: {len(out)} items ---")
                 for i, o in enumerate(out):
-                    LOGGER.info(f"    Output {i} shape: {list(o.shape)}")
+                    if hasattr(o, 'shape'):
+                        LOGGER.info(f"    Output {i} shape: {list(o.shape)}")
+                    else:
+                        LOGGER.info(f"    Output {i} type: {type(o)}")
             else:
                 LOGGER.info(f"--- Debug: single output shape: {list(out.shape)} ---")
 
@@ -231,7 +248,12 @@ class DetectionModel(BaseModel):
                 # do it again to create the stride
                 y = forward_once(torch.zeros(1, ch, s, s))
                 if isinstance(y, (list, tuple)):
-                    m.stride = torch.tensor([s / x.shape[-2] for x in y])  # multi-scale
+                    # Handle joint output (detection + classification)
+                    if len(y) == 2 and isinstance(y[0], list):
+                        # y[0] is detection output (list of tensors), y[1] is classification output
+                        m.stride = torch.tensor([s / x.shape[-2] for x in y[0]])  # multi-scale
+                    else:
+                        m.stride = torch.tensor([s / x.shape[-2] for x in y])  # multi-scale
                 else:
                     m.stride = torch.tensor([s / y.shape[-2]])  # single-scale
 
@@ -256,7 +278,13 @@ class DetectionModel(BaseModel):
     def forward(self, x, augment=False, profile=False, visualize=False):
         if augment:
             return self._forward_augment(x)
-        return self._forward_once(x, profile, visualize)
+        output = self._forward_once(x, profile, visualize)
+        
+        # Handle joint output (detection + classification)
+        if isinstance(output, tuple):
+            return output  # Return (detection_output, classification_output)
+        else:
+            return output  # Return detection_output only
 
     def _forward_augment(self, x):
         # multi-scale test-time augmentation
@@ -264,13 +292,30 @@ class DetectionModel(BaseModel):
         s = [1, 0.83, 0.67]  # scales
         f = [None, 3, None]  # flips
         y = []
+        cls_y = None
+        
         for si, fi in zip(s, f):
             xi = scale_img(x.flip(fi) if fi else x, si, gs=int(self.stride.max()))
-            yi = self._forward_once(xi)[0]  # only detection output if multi-out
+            output = self._forward_once(xi)
+            
+            # Handle joint output
+            if isinstance(output, tuple):
+                yi, cls_output = output
+                if cls_y is None:
+                    cls_y = cls_output
+            else:
+                yi = output
+                cls_y = None
+            
             yi = self._descale_pred(yi, fi, si, img_size)
             y.append(yi)
+        
         y = self._clip_augmented(y)
-        return torch.cat(y, 1), None
+        
+        if cls_y is not None:
+            return torch.cat(y, 1), cls_y
+        else:
+            return torch.cat(y, 1), None
 
     def _descale_pred(self, p, flips, scale, img_size):
         # De-scale augmented predictions

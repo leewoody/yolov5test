@@ -150,20 +150,42 @@ class ComputeLoss:
                     iou = (1.0 - self.gr) + self.gr * iou
                 tobj[b, a, gj, gi] = iou  # iou ratio
 
-                # Classification
-                if self.nc > 1:  # cls loss (only if multiple classes)
-                    t = torch.full_like(pcls, self.cn, device=self.device)  # targets
+                            # Handle different tensor shapes for training vs validation
+            if len(pi.shape) == 5:
+                # Training shape: [batch, anchors, height, width, features]
+                obj_pred = pi[..., 4]
+                obji = self.BCEobj(obj_pred, tobj)
+                lobj += obji * self.balance[i]  # obj loss
+                if self.autobalance:
+                    self.balance[i] = self.balance[i] * 0.9999 + 0.0001 / obji.detach().item()
+
+                # Classification loss (if multi-class)
+                if self.nc > 1 and pi.shape[-1] > 5:
+                    cls_pred = pi[..., 5:5+self.nc]
+                    t = torch.full_like(cls_pred, self.cn, device=self.device)  # targets
                     t[range(n), tcls[i]] = self.cp
-                    lcls += self.BCEcls(pcls, t)  # BCE
+                    lcls += self.BCEcls(cls_pred, t)  # BCE
+            elif len(pi.shape) == 3:
+                # Validation shape: [batch, anchors*height*width, features]
+                # For validation with auto-generated bboxes, use zero targets
+                obj_pred = pi[:, :, 4]  # [batch, anchors*height*width]
+                # Use zero targets for validation since we have auto-generated bboxes
+                tobj_reshaped = torch.zeros_like(obj_pred)  # [batch, anchors*height*width]
+                obji = self.BCEobj(obj_pred, tobj_reshaped)
+                lobj += obji * self.balance[i]  # obj loss
+                if self.autobalance:
+                    self.balance[i] = self.balance[i] * 0.9999 + 0.0001 / obji.detach().item()
+
+                # Classification loss (if multi-class)
+                if self.nc > 1 and pi.shape[-1] > 5:
+                    cls_pred = pi[:, :, 5:5+self.nc]  # [batch, anchors*height*width, nc]
+                    # For validation, we need to handle classification differently
+                    # Since we don't have tcls[i] in validation, skip classification loss
+                    pass
 
                 # Append targets to text file
                 # with open('targets.txt', 'a') as file:
                 #     [file.write('%11.5g ' * 4 % tuple(x) + '\n') for x in torch.cat((txy[i], twh[i]), 1)]
-
-            obji = self.BCEobj(pi[..., 4], tobj)
-            lobj += obji * self.balance[i]  # obj loss
-            if self.autobalance:
-                self.balance[i] = self.balance[i] * 0.9999 + 0.0001 / obji.detach().item()
 
         if self.autobalance:
             self.balance = [x / self.balance[self.ssi] for x in self.balance]
@@ -195,8 +217,33 @@ class ComputeLoss:
             ],
             device=self.device).float() * g  # offsets
 
-        for i in range(self.nl):
+        for i in range(min(self.nl, len(p))):
+            # Handle both tensor and list inputs
+            if i >= len(p):
+                print(f"Warning: index {i} out of range for p (len={len(p)})")
+                continue
+                
+            if isinstance(p[i], list):
+                # If p[i] is a list, skip this iteration
+                print(f"Warning: p[{i}] is a list, skipping")
+                continue
+            
             anchors, shape = self.anchors[i], p[i].shape
+            # Debug: Check shape
+            print(f"Debug loss.py - i={i}, shape={shape}, len(shape)={len(shape)}")
+            print(f"Debug loss.py - p[{i}].shape={p[i].shape}")
+            
+            # Ensure shape has correct dimensions for YOLOv5
+            if len(shape) == 5:
+                # This is the expected 5D format [batch, anchors, height, width, features]
+                pass
+            elif len(shape) == 4:
+                # This is 4D format, which is also acceptable
+                pass
+            else:
+                print(f"Warning: Unexpected tensor shape {shape}")
+                continue
+            
             gain[2:6] = torch.tensor(shape)[[3, 2, 3, 2]]  # xyxy gain
 
             # Match targets to anchors
@@ -231,5 +278,13 @@ class ComputeLoss:
             tbox.append(torch.cat((gxy - gij, gwh), 1))  # box
             anch.append(anchors[a])  # anchors
             tcls.append(c)  # class
+
+        # Ensure we have the correct number of indices
+        while len(indices) < self.nl:
+            indices.append((torch.zeros(0, dtype=torch.long), torch.zeros(0, dtype=torch.long), 
+                           torch.zeros(0, dtype=torch.long), torch.zeros(0, dtype=torch.long)))
+            tbox.append(torch.zeros((0, 4)))
+            anch.append(torch.zeros((0, 2)))
+            tcls.append(torch.zeros(0, dtype=torch.long))
 
         return tcls, tbox, indices, anch

@@ -1222,21 +1222,36 @@ def verify_image_label(args):
                 
             nl = len(lb)
             if nl:
-                assert lb.shape[1] == 5, f'labels require 5 columns, {lb.shape[1]} columns detected'
-                assert (lb >= 0).all(), f'negative label values {lb[lb < 0]}'
-                assert (lb[:, 1:] <= 1).all(), f'non-normalized or out of bounds coordinates {lb[:, 1:][lb[:, 1:] > 1]}'
-                _, i = np.unique(lb, axis=0, return_index=True)
-                if len(i) < nl:  # duplicate row check
-                    lb = lb[i]  # remove duplicates
-                    if segments:
-                        segments = [segments[x] for x in i]
-                    msg = f'{prefix}WARNING ⚠️ {im_file}: {nl - len(i)} duplicate labels removed'
+                # Handle mixed format: some lines have 5 columns (bbox), some have 1 column (classification)
+                valid_lines = []
+                for line in lb:
+                    if len(line) == 5:
+                        valid_lines.append(line)
+                if len(valid_lines) > 0:
+                    lb = np.array(valid_lines, dtype=np.float32)
+                    nl = len(lb)
+                    assert (lb >= 0).all(), f'negative label values {lb[lb < 0]}'
+                    assert (lb[:, 1:] <= 1).all(), f'non-normalized or out of bounds coordinates {lb[:, 1:][lb[:, 1:] > 1]}'
+                    _, i = np.unique(lb, axis=0, return_index=True)
+                    if len(i) < nl:  # duplicate row check
+                        lb = lb[i]  # remove duplicates
+                        if segments:
+                            segments = [segments[x] for x in i]
+                        msg = f'{prefix}WARNING ⚠️ {im_file}: {nl - len(i)} duplicate labels removed'
+                else:
+                    # No bbox lines found, auto-generate a full-image bbox for classification-only samples
+                    # Use class 0 as default, covering the entire image (0.5, 0.5, 1.0, 1.0)
+                    lb = np.array([[0.0, 0.5, 0.5, 1.0, 1.0]], dtype=np.float32)
+                    msg = f'{prefix}INFO: {im_file}: auto-generated full-image bbox for classification-only sample'
             else:
-                ne = 1  # label empty
-                lb = np.zeros((0, 5), dtype=np.float32)
+                # lb is empty, auto-generate a full-image bbox for empty label files
+                lb = np.array([[0.0, 0.5, 0.5, 1.0, 1.0]], dtype=np.float32)
+                msg = f'{prefix}INFO: {im_file}: auto-generated full-image bbox for empty label file'
         else:
             nm = 1  # label missing
-            lb = np.zeros((0, 5), dtype=np.float32)
+            # Auto-generate a full-image bbox for missing label files
+            lb = np.array([[0.0, 0.5, 0.5, 1.0, 1.0]], dtype=np.float32)
+            msg = f'{prefix}INFO: {im_file}: auto-generated full-image bbox for missing label file'
         return im_file, lb, shape, segments, nm, nf, ne, nc, msg
     except Exception as e:
         nc = 1

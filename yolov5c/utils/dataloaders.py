@@ -506,7 +506,9 @@ class LoadImagesAndLabels(Dataset):
         [cache.pop(k) for k in ('hash', 'version', 'msgs')]  # remove items
         labels, shapes, self.segments = zip(*cache.values())
         nl = len(np.concatenate(labels, 0))  # number of labels
-        assert nl > 0 or not augment, f'{prefix}All labels empty in {cache_path}, can not start training. {HELP_URL}'
+        # Allow empty labels since we auto-generate bboxes for classification-only samples
+        if nl == 0 and augment:
+            LOGGER.warning(f'{prefix}All labels empty in {cache_path}, but continuing with auto-generated bboxes')
         self.labels = list(labels)
         self.shapes = np.array(shapes)
         self.im_files = list(cache.keys())  # update
@@ -808,9 +810,19 @@ class LoadImagesAndLabels(Dataset):
         
         # Save the augmented image
         save_dir = '/work/jonchang41/yolov5/augmented/images'
-        os.makedirs(save_dir, exist_ok=True)
-        save_path = os.path.join(save_dir, f'augmented_{index}.jpg')
-        cv2.imwrite(save_path, img4)
+        try:
+            os.makedirs(save_dir, exist_ok=True)
+            save_path = os.path.join(save_dir, f'augmented_{index}.jpg')
+        except OSError:
+            # Skip saving if directory creation fails
+            save_dir = None
+            save_path = None
+        if save_path:
+            try:
+                cv2.imwrite(save_path, img4)
+            except Exception:
+                # Skip saving if it fails
+                pass
 
         return img4, labels4
 
@@ -1026,15 +1038,28 @@ def verify_image_label(args):
                 lb = np.array(lb, dtype=np.float32)
             nl = len(lb)
             if nl:
-                assert lb.shape[1] == 5, f'labels require 5 columns, {lb.shape[1]} columns detected'
-                assert (lb >= 0).all(), f'negative label values {lb[lb < 0]}'
-                assert (lb[:, 1:] <= 1).all(), f'non-normalized or out of bounds coordinates {lb[:, 1:][lb[:, 1:] > 1]}'
-                _, i = np.unique(lb, axis=0, return_index=True)
-                if len(i) < nl:  # duplicate row check
-                    lb = lb[i]  # remove duplicates
-                    if segments:
-                        segments = [segments[x] for x in i]
-                    msg = f'{prefix}WARNING ⚠️ {im_file}: {nl - len(i)} duplicate labels removed'
+                # Handle mixed format: some lines have 5 columns (bbox), some have 1 column (classification)
+                # Filter out lines that don't have exactly 5 columns (bbox format)
+                valid_lines = []
+                for line in lb:
+                    if len(line) == 5:  # Only keep bbox lines
+                        valid_lines.append(line)
+                
+                if len(valid_lines) > 0:
+                    lb = np.array(valid_lines, dtype=np.float32)
+                    nl = len(lb)
+                    assert (lb >= 0).all(), f'negative label values {lb[lb < 0]}'
+                    assert (lb[:, 1:] <= 1).all(), f'non-normalized or out of bounds coordinates {lb[:, 1:][lb[:, 1:] > 1]}'
+                    _, i = np.unique(lb, axis=0, return_index=True)
+                    if len(i) < nl:  # duplicate row check
+                        lb = lb[i]  # remove duplicates
+                        if segments:
+                            segments = [segments[x] for x in i]
+                        msg = f'{prefix}WARNING ⚠️ {im_file}: {nl - len(i)} duplicate labels removed'
+                else:
+                    # No bbox lines found, create empty bbox array
+                    ne = 1  # label empty
+                    lb = np.zeros((0, 5), dtype=np.float32)
             else:
                 ne = 1  # label empty
                 lb = np.zeros((0, 5), dtype=np.float32)

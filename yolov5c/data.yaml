@@ -1,6 +1,6 @@
-train: ../demo/train/images
-val: ../demo/valid/images
-test: ../demo/test/images
+train: ../demo_detection_only/train/images
+val: ../demo_detection_only/valid/images
+test: ../demo_detection_only/test/images
 
 nc: 2
 names: ['ASDType2', 'VSDType2']

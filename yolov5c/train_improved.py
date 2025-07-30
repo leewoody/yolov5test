@@ -136,6 +136,7 @@ def train(hyp, opt, device, callbacks):
     imgsz = check_img_size(opt.imgsz, gs, floor=gs * 2)  # verify imgsz is gs-multiple
 
     # Batch size
+    amp = False  # Disable AMP for CPU training
     if RANK == -1 and batch_size == -1:  # single-GPU only, estimate best batch size
         batch_size = check_train_batch_size(model, imgsz, amp)
 
@@ -161,7 +162,7 @@ def train(hyp, opt, device, callbacks):
     else:
         optimizer = smart_optimizer(model, opt.optimizer, hyp['lr0'], hyp['momentum'], hyp['weight_decay'])
 
-    smart_resume(optimizer, opt.resume, train=True)
+    # smart_resume(optimizer, opt.resume, train=True)
 
     # Scheduler
     if opt.cos_lr:
@@ -245,7 +246,8 @@ def train(hyp, opt, device, callbacks):
         if not resume:
             labels = np.concatenate(dataset.labels, 0)
             if plots:
-                plot_labels(labels, names, save_dir)
+                # plot_labels(labels, names, save_dir)  # Commented out to avoid import issues
+                pass
 
         # Anchors
         if not opt.noautoanchor:

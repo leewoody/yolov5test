@@ -1,0 +1,85 @@
+# Optimized hyperparameters for Regurgitation dataset
+# Focus on improving confidence and overall performance
+
+# Optimizer parameters
+lr0: 0.001  # Initial learning rate (reduced for better convergence)
+lrf: 0.01   # Final learning rate (lr0 * lrf)
+momentum: 0.937  # SGD momentum/Adam beta1
+weight_decay: 0.0005  # Optimizer weight decay
+warmup_epochs: 3.0  # Warmup epochs (fractions ok)
+warmup_momentum: 0.8  # Warmup initial momentum
+warmup_bias_lr: 0.1  # Warmup initial bias lr
+box: 0.05  # Box loss gain
+cls: 0.5   # Class loss gain (increased for better classification)
+cls_pw: 1.0  # Class BCELoss positive_weight
+obj: 1.0   # Objectness loss gain (increased for better object detection)
+obj_pw: 1.0  # Objectness BCELoss positive_weight
+iou_t: 0.20  # IoU training threshold
+anchor_t: 4.0  # Anchor-multiple threshold
+fl_gamma: 0.0  # Focal loss gamma (efficientDet default gamma=1.5)
+hsv_h: 0.015  # Image HSV-Hue augmentation (fraction)
+hsv_s: 0.7    # Image HSV-Saturation augmentation (fraction)
+hsv_v: 0.4    # Image HSV-Value augmentation (fraction)
+degrees: 10.0  # Image rotation (+/- deg)
+translate: 0.1  # Image translation (+/- fraction)
+scale: 0.5     # Image scale (+/- gain)
+shear: 2.0     # Image shear (+/- deg)
+perspective: 0.0  # Image perspective (+/- fraction), range 0-0.001
+flipud: 0.0    # Image flip up-down (probability)
+fliplr: 0.5    # Image flip left-right (probability)
+mosaic: 1.0    # Image mosaic (probability)
+mixup: 0.0     # Image mixup (probability)
+copy_paste: 0.0  # Segment copy-paste (probability)
+
+# Loss coefficients
+box: 0.05      # Box loss gain
+cls: 0.5       # Class loss gain (increased for better confidence)
+cls_pw: 1.0    # Class BCELoss positive_weight
+obj: 1.0       # Objectness loss gain (increased for better detection)
+obj_pw: 1.0    # Objectness BCELoss positive_weight
+iou_t: 0.20    # IoU training threshold
+anchor_t: 4.0  # Anchor-multiple threshold
+fl_gamma: 0.0  # Focal loss gamma
+
+# Data augmentation
+hsv_h: 0.015   # HSV-Hue augmentation (fraction)
+hsv_s: 0.7     # HSV-Saturation augmentation (fraction)
+hsv_v: 0.4     # HSV-Value augmentation (fraction)
+degrees: 10.0  # Image rotation (+/- deg)
+translate: 0.1 # Image translation (+/- fraction)
+scale: 0.5     # Image scale (+/- gain)
+shear: 2.0     # Image shear (+/- deg)
+perspective: 0.0  # Image perspective (+/- fraction)
+flipud: 0.0    # Image flip up-down (probability)
+fliplr: 0.5    # Image flip left-right (probability)
+mosaic: 1.0    # Image mosaic (probability)
+mixup: 0.0     # Image mixup (probability)
+copy_paste: 0.0  # Segment copy-paste (probability)
+
+# Confidence optimization
+confidence_threshold: 0.25  # Minimum confidence threshold
+nms_threshold: 0.45         # NMS IoU threshold
+max_det: 300               # Maximum detections per image
+
+# Training optimization
+patience: 50               # Early stopping patience
+min_delta: 0.001          # Minimum improvement for early stopping
+save_period: 10           # Save checkpoint every N epochs
+val_period: 5             # Validate every N epochs
+
+# Model optimization
+fuse: True                # Fuse Conv2d + BatchNorm2d layers
+agnostic_nms: False       # NMS class-agnostic
+max_det: 300             # Maximum number of detections per image
+classes: null            # Filter by class: --classes 0, or --classes 0 2 3
+augment: False           # Augmented inference
+visualize: False         # Visualize features
+update: False            # Update all models
+project: runs/detect     # Save results to project/name
+name: exp                # Save results to project/name
+exist_ok: False          # Existing project/name ok, do not increment
+line_thickness: 3        # Bounding box thickness (pixels)
+hide_labels: False       # Hide labels
+hide_conf: False         # Hide confidences
+half: False              # Use FP16 half-precision inference
+dnn: False               # Use OpenCV DNN for ONNX inference 
