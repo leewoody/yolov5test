@@ -36,6 +36,11 @@ yolov5test/
 - 心臟疾病分類（正常、輕度、重度）
 - 專業醫學數據集支持
 
+### 4. 增強驗證與訓練日誌分析（2025年7月）
+- 新增 `enhanced_validation.py`：一鍵產生 mAP、Precision、Recall、F1、混淆矩陣、置信度分佈等完整驗證指標與圖表
+- 新增 `run_enhanced_validation.py`：簡化批次驗證流程
+- 新增 `quick_validation.py`、`analyze_your_log.py`：快速分析訓練日誌，產生訓練狀態報告與可視化
+
 ## 最近更新 (2024年7月)
 
 ### 主要改進
@@ -225,6 +230,10 @@ python utils/label_analyzer.py --input train/labels --output analysis_report.md
 - `train_fixed.py` - 修復版訓練腳本
 - `train_improved.py` - 改進版訓練腳本
 - `train_combined.py` - 聯合訓練腳本
+- `enhanced_validation.py` - 增強版驗證腳本，產生完整驗證指標與圖表
+- `run_enhanced_validation.py` - 批次驗證運行器
+- `quick_validation.py` - 快速訓練日誌分析
+- `analyze_your_log.py` - 專用訓練日誌分析與可視化
 
 ## 性能對比
 
@@ -315,3 +324,8 @@ python train_improved.py \
 - 初始版本發布
 - 基本檢測和分類功能
 - 醫學數據集支持 
+
+### 2025年7月31日
+- 新增增強驗證腳本與訓練日誌分析工具
+- 支援一鍵產生完整驗證指標、混淆矩陣、置信度分佈、訓練狀態報告
+- 優化驗證流程與可視化 
