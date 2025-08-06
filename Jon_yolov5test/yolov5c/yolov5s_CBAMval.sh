@@ -1,0 +1,6 @@
+cd /work/jonchang3909/yolov5/ && sudo apt-get update && sudo apt-get install libgl1 -y && sudo pip install pandas && sudo pip install seaborn &&  
+python val.py --weights runs/train/yolov5s_CBAM_1/weights/best.pt --img 448 --conf 0.4 --data ../Regurgitation-YOLODataset-1/data.yaml --name yolov5s_CBAM_1val --save-conf --save-txt &&
+python val.py --weights runs/train/yolov5s_CBAM_2/weights/best.pt --img 448 --conf 0.4 --data ../Regurgitation-YOLODataset-2/data.yaml --name yolov5s_CBAM_2val --save-conf --save-txt &&
+python val.py --weights runs/train/yolov5s_CBAM_3/weights/best.pt --img 448 --conf 0.4 --data ../Regurgitation-YOLODataset-3/data.yaml --name yolov5s_CBAM_3val --save-conf --save-txt &&
+python val.py --weights runs/train/yolov5s_CBAM_4/weights/best.pt --img 448 --conf 0.4 --data ../Regurgitation-YOLODataset-4/data.yaml --name yolov5s_CBAM_4val --save-conf --save-txt &&
+python val.py --weights runs/train/yolov5s_CBAM_5/weights/best.pt --img 448 --conf 0.4 --data ../Regurgitation-YOLODataset-5/data.yaml --name yolov5s_CBAM_5val --save-conf --save-txt &&

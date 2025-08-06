@@ -1,0 +1,11 @@
+{
+  "test_time": "2025-08-05T10:02:57.970809",
+  "gradnorm_results": {
+    "solution": "GradNorm",
+    "error": "No module named 'utils.datasets'"
+  },
+  "dual_backbone_results": {
+    "solution": "Dual Backbone",
+    "error": "No module named 'utils.datasets'"
+  }
+}

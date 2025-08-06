@@ -4,6 +4,207 @@
 
 這是一個基於 YOLOv5 的目標檢測和分類測試專案，專注於醫學圖像分析，特別是心臟超音波圖像的檢測和分類任務。專案包含多個數據集和改進的訓練方案。
 
+## 🚨 重要規則 (Cursor Rules)
+
+### YOLOv5WithClassification 聯合訓練規則
+
+#### 1. 聯合訓練必須啟用分類功能
+- **專案重點是 YOLOv5WithClassification 聯合檢測和分類**
+- **必須啟用分類功能，不能禁用聯合訓練**
+- **所有超參數文件都應配置為支持聯合訓練**
+
+#### 2. 超參數配置規則
+- **`hyp_improved.yaml`** - 改進版聯合訓練超參數
+  - `classification_enabled: true`
+  - `classification_weight: 0.01`
+- **`hyp_medical.yaml`** - 醫學圖像聯合訓練超參數
+  - `classification_enabled: true`
+  - `classification_weight: 0.005`
+- **`hyp_medical_complete.yaml`** - 醫學圖像完整聯合訓練超參數
+  - `classification_enabled: true`
+  - `classification_weight: 0.008`
+  - `progressive_training: true`
+  - `classification_schedule: true`
+- **`hyp_fixed.yaml`** - 修復版聯合訓練超參數
+  - `classification_enabled: true`
+  - `classification_weight: 0.05`
+
+#### 3. 聯合訓練命令規則
+
+##### 高級聯合訓練 (train_joint_advanced.py)
+```bash
+# 基本高級聯合訓練
+python train_joint_advanced.py \
+    --data converted_dataset_fixed/data.yaml \
+    --epochs 50 \
+    --batch-size 16 \
+    --device auto
+
+# 關閉早停，獲得完整訓練圖表
+python train_joint_advanced.py \
+    --data converted_dataset_fixed/data.yaml \
+    --epochs 50 \
+    --batch-size 16 \
+    --device auto
+    # 移除 --enable-early-stop 參數
+```
+
+##### 終極聯合訓練 (train_joint_ultimate.py)
+```bash
+# 終極聯合訓練
+python train_joint_ultimate.py \
+    --data converted_dataset_fixed/data.yaml \
+    --epochs 50 \
+    --batch-size 16 \
+    --device auto \
+    --bbox-weight 10.0 \
+    --cls-weight 8.0
+
+# 關閉早停，獲得完整訓練圖表
+python train_joint_ultimate.py \
+    --data converted_dataset_fixed/data.yaml \
+    --epochs 50 \
+    --batch-size 16 \
+    --device auto \
+    --bbox-weight 10.0 \
+    --cls-weight 8.0
+    # 移除 --enable-earlystop 參數
+```
+
+##### 修復版聯合訓練 (train_joint_fixed.py)
+```bash
+# 修復版聯合訓練
+python train_joint_fixed.py \
+    --data converted_dataset_fixed/data.yaml \
+    --epochs 50 \
+    --batch-size 16 \
+    --device auto \
+    --log training_fixed.log
+```
+
+##### 優化修復版聯合訓練 (train_joint_optimized_fixed.py)
+```bash
+# 優化修復版聯合訓練
+python train_joint_optimized_fixed.py \
+    --data converted_dataset_fixed/data.yaml \
+    --weights yolov5s.pt \
+    --epochs 100 \
+    --batch-size 16 \
+    --imgsz 640
+```
+
+#### 4. 早停機制規則
+
+##### 重要：關閉早停機制
+- **必須關閉早停機制** 以獲得完整的訓練圖表
+- 移除所有 `--enable-early-stop` 和 `--enable-earlystop` 參數
+- 這樣可以獲得：
+  - 完整訓練曲線
+  - 豐富的圖表數據
+  - AUTO-FIX 效果觀察
+  - 訓練穩定性評估
+
+##### 關閉早停的原因
+1. **完整訓練曲線** - 可以看到整個訓練過程的趨勢
+2. **豐富的圖表數據** - 包括過擬合、準確率變化等
+3. **更好的分析** - 可以分析模型在不同階段的表現
+4. **AUTO-FIX 效果觀察** - 可以看到自動優化系統的完整效果
+5. **訓練穩定性評估** - 觀察模型在後期的表現
+
+#### 5. 數據擴增功能建議關閉
+- **醫學圖像訓練建議關閉數據擴增**
+- 保持醫學圖像的原始特徵和準確性
+- 避免數據擴增對醫學診斷的干擾
+
+#### 6. 推薦訓練策略
+
+##### 階段 1：基礎聯合訓練
+```bash
+python train_joint_fixed.py \
+    --data converted_dataset_fixed/data.yaml \
+    --epochs 20 \
+    --batch-size 16 \
+    --device auto
+```
+
+##### 階段 2：高級優化訓練
+```bash
+python train_joint_advanced.py \
+    --data converted_dataset_fixed/data.yaml \
+    --epochs 50 \
+    --batch-size 16 \
+    --device auto
+```
+
+##### 階段 3：終極聯合訓練
+```bash
+python train_joint_ultimate.py \
+    --data converted_dataset_fixed/data.yaml \
+    --epochs 50 \
+    --batch-size 16 \
+    --device auto \
+    --bbox-weight 10.0 \
+    --cls-weight 8.0
+```
+
+#### 7. 快速測試命令
+
+```bash
+# 快速測試（小數據集，少輪數）
+python train_joint_advanced.py \
+    --data demo/data.yaml \
+    --epochs 5 \
+    --batch-size 8 \
+    --device auto
+
+# 快速測試終極版本
+python train_joint_ultimate.py \
+    --data demo/data.yaml \
+    --epochs 3 \
+    --batch-size 8 \
+    --device auto \
+    --bbox-weight 5.0 \
+    --cls-weight 5.0
+```
+
+#### 8. 預期輸出文件
+
+每個訓練腳本會生成：
+- `joint_model_advanced.pth` / `joint_model_fixed.pth` / `joint_model_ultimate.pth`
+- `training_history_advanced.json` / `training_history_fixed.json`
+- 訓練日誌文件
+
+#### 9. 預期獲得的圖表
+
+關閉早停後，將獲得：
+1. **訓練損失曲線** - 完整的訓練和驗證損失變化
+2. **分類準確率曲線** - 驗證準確率的完整變化趨勢
+3. **AUTO-FIX 效果圖** - 自動優化系統的干預次數和效果
+4. **學習率變化圖** - 動態學習率調整的完整過程
+5. **損失權重變化圖** - 分類損失權重的動態調整
+6. **過擬合檢測圖** - 過擬合風險的完整監控
+
+#### 10. 注意事項
+
+1. **數據集路徑**：確保使用正確的 `data.yaml` 文件
+2. **GPU 記憶體**：如果記憶體不足，減少 `batch-size`
+3. **訓練時間**：終極版本訓練時間較長，建議先用小數據集測試
+4. **早停機制**：必須關閉以獲得完整圖表
+5. **聯合訓練**：必須啟用分類功能，不能禁用
+
+#### 11. 禁止事項
+
+- 禁止禁用分類功能 (`classification_enabled: false`)
+- 禁止使用 `--enable-early-stop` 或 `--enable-earlystop` 參數
+- 禁止使用純檢測訓練模式
+- 禁止修改超參數文件中的分類設置為禁用狀態
+
+#### 12. 語言規則
+
+- 回應使用繁體中文
+- 腳本註釋使用英文
+- 保持專業和技術準確性
+
 ## 專案結構
 
 ```
@@ -38,6 +239,8 @@ yolov5test/
 
 ### 4. 增強驗證與訓練日誌分析（2025年7月）
 - 新增 `enhanced_validation.py`：一鍵產生 mAP、Precision、Recall、F1、混淆矩陣、置信度分佈等完整驗證指標與圖表
+- 新增 `enhanced_classification_validation.py`：完整分類驗證指標，包括混淆矩陣、ROC曲線、PR曲線等
+- 新增 `unified_validation.py`：統一驗證腳本，自動判斷檢測或分類任務
 - 新增 `run_enhanced_validation.py`：簡化批次驗證流程
 - 新增 `quick_validation.py`、`analyze_your_log.py`：快速分析訓練日誌，產生訓練狀態報告與可視化
 
@@ -94,6 +297,19 @@ python train_improved.py \
     --data data.yaml \
     --weights yolov5s.pt \
     --hyp hyp_improved.yaml \
+    --epochs 100
+```
+
+#### 2. 聯合檢測和分類訓練
+
+```bash
+# 謹慎使用，建議先進行純檢測訓練
+python train_improved.py \
+    --data data.yaml \
+    --weights yolov5s.pt \
+    --hyp hyp_improved.yaml \
+    --classification-enabled \
+    --classification-weight 0.01 \
     --epochs 100
 ```
 
@@ -230,10 +446,18 @@ python utils/label_analyzer.py --input train/labels --output analysis_report.md
 - `train_fixed.py` - 修復版訓練腳本
 - `train_improved.py` - 改進版訓練腳本
 - `train_combined.py` - 聯合訓練腳本
-- `enhanced_validation.py` - 增強版驗證腳本，產生完整驗證指標與圖表
+- `enhanced_validation.py` - 增強版檢測驗證腳本，產生完整驗證指標與圖表
+- `enhanced_classification_validation.py` - 增強版分類驗證腳本，產生完整分類指標與圖表
+- `unified_validation.py` - 統一驗證腳本，自動判斷檢測或分類任務
 - `run_enhanced_validation.py` - 批次驗證運行器
 - `quick_validation.py` - 快速訓練日誌分析
 - `analyze_your_log.py` - 專用訓練日誌分析與可視化
+- `analyze_advanced_training.py` - 高級訓練分析，評估Auto-Fix效果
+- `auto_run_training.py` - 自動運行完整訓練流程
+- `quick_auto_run.py` - 快速自動運行（推薦）
+- `monitor_training.py` - 實時訓練日誌監控（帶圖表）
+- `simple_monitor.py` - 簡化訓練監控器
+- `quick_monitor.py` - 快速監控啟動器
 
 ## 性能對比
 
@@ -327,5 +551,10 @@ python train_improved.py \
 
 ### 2025年7月31日
 - 新增增強驗證腳本與訓練日誌分析工具
+- 新增分類驗證腳本，支援混淆矩陣、ROC曲線、PR曲線等完整分類指標
+- 新增統一驗證腳本，自動判斷檢測或分類任務
+- 新增自動優化訓練系統（Auto-Fix），自動處理過擬合和準確率下降問題
+- 新增高級訓練分析腳本，分析Auto-Fix效果
+- 新增實時訓練監控工具，支援進程監控和日誌分析
 - 支援一鍵產生完整驗證指標、混淆矩陣、置信度分佈、訓練狀態報告
 - 優化驗證流程與可視化 

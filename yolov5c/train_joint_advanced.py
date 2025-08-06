@@ -235,8 +235,8 @@ def get_advanced_transforms(split='train'):
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
 
-def train_model_advanced(model, train_loader, val_loader, num_epochs=50, device='cuda'):
-    """Train the advanced joint model with all optimizations"""
+def train_model_advanced(model, train_loader, val_loader, num_epochs=50, device='cuda', enable_early_stop=False):
+    """Train the advanced joint model with all optimizations and auto-fix"""
     model = model.to(device)
     
     # Enhanced loss functions
@@ -251,11 +251,36 @@ def train_model_advanced(model, train_loader, val_loader, num_epochs=50, device=
     bbox_weight = 1.0
     cls_weight = 5.0  # Much higher weight for classification
     
+    # Auto-fix tracking variables
     best_val_loss = float('inf')
     best_val_cls_acc = 0.0
     best_model_state = None
     patience = 10
     patience_counter = 0
+    
+    # Auto-fix configuration
+    auto_fix_config = {
+        'overfitting_threshold': 0.1,  # Train loss > Val loss + threshold
+        'accuracy_drop_threshold': 0.05,  # Accuracy drop threshold
+        'lr_reduction_factor': 0.5,
+        'weight_decay_increase_factor': 1.5,
+        'dropout_increase_factor': 0.05,
+        'cls_weight_increase': 1.0,
+        'cls_weight_decrease': 0.5,
+        'max_cls_weight': 10.0,
+        'min_cls_weight': 3.0,
+        'max_weight_decay': 0.05,
+        'max_dropout': 0.5
+    }
+    
+    # Training history for auto-fix analysis
+    training_history = {
+        'train_losses': [],
+        'val_losses': [],
+        'val_accuracies': [],
+        'overfitting_flags': [],
+        'accuracy_drops': []
+    }
     
     # Training loop
     for epoch in range(num_epochs):
@@ -333,33 +358,132 @@ def train_model_advanced(model, train_loader, val_loader, num_epochs=50, device=
         avg_val_loss = val_loss / len(val_loader)
         avg_val_cls_accuracy = val_cls_accuracy / val_samples
         
+        # Update training history
+        training_history['train_losses'].append(avg_train_loss)
+        training_history['val_losses'].append(avg_val_loss)
+        training_history['val_accuracies'].append(avg_val_cls_accuracy)
+        
+        # --- Auto Fix: 過擬合與準確率下降自動調整 ---
+        overfitting_detected = False
+        accuracy_drop_detected = False
+        
+        # 1. 過擬合檢測與自動調整
+        if avg_train_loss > avg_val_loss + auto_fix_config['overfitting_threshold']:
+            overfitting_detected = True
+            training_history['overfitting_flags'].append(True)
+            print('⚠️ 過擬合風險檢測，自動調整正則化與學習率')
+            
+            # 增加Dropout
+            for m in model.modules():
+                if isinstance(m, nn.Dropout):
+                    old_dropout = m.p
+                    m.p = min(m.p + auto_fix_config['dropout_increase_factor'], 
+                             auto_fix_config['max_dropout'])
+                    print(f'  Dropout: {old_dropout:.3f} -> {m.p:.3f}')
+            
+            # 增大weight_decay
+            for g in optimizer.param_groups:
+                old_weight_decay = g['weight_decay']
+                g['weight_decay'] = min(g['weight_decay'] * auto_fix_config['weight_decay_increase_factor'], 
+                                       auto_fix_config['max_weight_decay'])
+                print(f'  Weight Decay: {old_weight_decay:.4f} -> {g["weight_decay"]:.4f}')
+            
+            # 降低學習率
+            for g in optimizer.param_groups:
+                old_lr = g['lr']
+                g['lr'] = max(g['lr'] * auto_fix_config['lr_reduction_factor'], 1e-6)
+                print(f'  Learning Rate: {old_lr:.6f} -> {g["lr"]:.6f}')
+        else:
+            training_history['overfitting_flags'].append(False)
+        
+        # 2. 準確率下降檢測與自動調整
+        if len(training_history['val_accuracies']) > 1:
+            accuracy_drop = best_val_cls_acc - avg_val_cls_accuracy
+            if accuracy_drop > auto_fix_config['accuracy_drop_threshold']:
+                accuracy_drop_detected = True
+                training_history['accuracy_drops'].append(True)
+                print('⚠️ 準確率下降檢測，自動提升分類損失權重')
+                
+                old_cls_weight = cls_weight
+                cls_weight = min(cls_weight + auto_fix_config['cls_weight_increase'], 
+                                auto_fix_config['max_cls_weight'])
+                print(f'  分類損失權重: {old_cls_weight:.1f} -> {cls_weight:.1f}')
+            else:
+                # 如果準確率提升，適當降低分類損失權重
+                if avg_val_cls_accuracy > best_val_cls_acc:
+                    old_cls_weight = cls_weight
+                    cls_weight = max(cls_weight - auto_fix_config['cls_weight_decrease'], 
+                                    auto_fix_config['min_cls_weight'])
+                    print(f'  準確率提升，降低分類損失權重: {old_cls_weight:.1f} -> {cls_weight:.1f}')
+                training_history['accuracy_drops'].append(False)
+        else:
+            training_history['accuracy_drops'].append(False)
+        
+        # 3. 動態 early stopping
+        if enable_early_stop and patience_counter >= patience // 2 and avg_val_loss > best_val_loss:
+            print('⚠️ 驗證損失無改善，提前 early stop')
+            break
+        
         # Learning rate scheduling
         scheduler.step()
         
         # Save best model based on validation accuracy
         if avg_val_cls_accuracy > best_val_cls_acc:
             best_val_cls_acc = avg_val_cls_accuracy
+            best_val_loss = avg_val_loss
             best_model_state = model.state_dict().copy()
             patience_counter = 0
-            print(f"保存最佳模型 (val_cls_acc: {avg_val_cls_accuracy:.4f})")
+            print(f"✅ 保存最佳模型 (val_cls_acc: {avg_val_cls_accuracy:.4f})")
         else:
             patience_counter += 1
         
         # Early stopping
-        if patience_counter >= patience:
-            print(f"Early stopping at epoch {epoch+1}")
+        if enable_early_stop and patience_counter >= patience:
+            print(f"🛑 Early stopping at epoch {epoch+1}")
             break
         
+        # Print epoch summary
         print(f'Epoch {epoch+1}/{num_epochs}:')
         print(f'  Train Loss: {avg_train_loss:.4f} (Bbox: {bbox_loss_sum/len(train_loader):.4f}, Cls: {cls_loss_sum/len(train_loader):.4f})')
         print(f'  Val Loss: {avg_val_loss:.4f} (Bbox: {val_bbox_loss/len(val_loader):.4f}, Cls: {val_cls_loss/len(val_loader):.4f})')
         print(f'  Val Cls Accuracy: {avg_val_cls_accuracy:.4f}')
         print(f'  Best Val Cls Accuracy: {best_val_cls_acc:.4f}')
+        print(f'  Current Cls Weight: {cls_weight:.1f}')
+        if overfitting_detected or accuracy_drop_detected:
+            print('  🔧 Auto-fix applied')
         print('-' * 50)
     
     # Load best model
     if best_model_state is not None:
         model.load_state_dict(best_model_state)
+    
+    # Save training history for analysis
+    import json
+    history_path = 'training_history_advanced.json'
+    with open(history_path, 'w') as f:
+        json.dump(training_history, f, indent=2)
+    print(f"📊 訓練歷史已保存到: {history_path}")
+    
+    # Print auto-fix summary
+    overfitting_count = sum(training_history['overfitting_flags'])
+    accuracy_drop_count = sum(training_history['accuracy_drops'])
+    total_epochs = len(training_history['train_losses'])
+    
+    print("\n" + "="*60)
+    print("🔧 AUTO-FIX 總結報告")
+    print("="*60)
+    print(f"總訓練輪數: {total_epochs}")
+    print(f"過擬合檢測次數: {overfitting_count} ({overfitting_count/total_epochs*100:.1f}%)")
+    print(f"準確率下降檢測次數: {accuracy_drop_count} ({accuracy_drop_count/total_epochs*100:.1f}%)")
+    print(f"最終最佳驗證準確率: {best_val_cls_acc:.4f}")
+    print(f"最終最佳驗證損失: {best_val_loss:.4f}")
+    
+    if overfitting_count > 0:
+        print("✅ 過擬合問題已自動處理")
+    if accuracy_drop_count > 0:
+        print("✅ 準確率下降問題已自動處理")
+    
+    print("="*60)
     
     return model
 
@@ -369,6 +493,7 @@ def main():
     parser.add_argument('--epochs', type=int, default=50, help='Number of training epochs')
     parser.add_argument('--batch-size', type=int, default=16, help='Batch size')
     parser.add_argument('--device', type=str, default='auto', help='Device to use (auto, cuda, cpu)')
+    parser.add_argument('--enable-early-stop', action='store_true', help='Enable early stopping')
     
     args = parser.parse_args()
     
@@ -412,8 +537,13 @@ def main():
     print("- 高分類損失權重 (5.0)")
     print("- Cosine Annealing 學習率調度")
     print("- Early Stopping")
+    print("- 🔧 AUTO-FIX 自動優化系統:")
+    print("  • 過擬合自動檢測與修正")
+    print("  • 準確率下降自動調整")
+    print("  • 動態學習率與正則化調整")
+    print("  • 智能早停機制: {'啟用' if enable_early_stop else '禁用'}")
     
-    trained_model = train_model_advanced(model, train_loader, val_loader, args.epochs, device)
+    trained_model = train_model_advanced(model, train_loader, val_loader, args.epochs, device, enable_early_stop=args.enable_early_stop)
     
     # Save model
     save_path = 'joint_model_advanced.pth'

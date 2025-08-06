@@ -1,0 +1,10 @@
+# YOLO Detection Dataset
+names:
+- AR
+- MR
+- PR
+- TR
+nc: 4
+train: ../Regurgitation-YOLODataset-Detection/train/images
+val: ../Regurgitation-YOLODataset-Detection/valid/images
+test: ../Regurgitation-YOLODataset-Detection/test/images 

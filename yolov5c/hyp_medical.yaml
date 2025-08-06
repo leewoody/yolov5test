@@ -35,9 +35,9 @@ mosaic: 0.8  # Reduced mosaic probability
 mixup: 0.0  # No mixup (preserve medical integrity)
 copy_paste: 0.0  # No copy-paste
 
-# Classification loss parameters - Disabled by default
-classification_enabled: false  # Disable classification for pure detection
-classification_weight: 0.005  # Extremely low weight if enabled
+# Classification loss parameters - Medical classification enabled
+classification_enabled: true  # Enable classification for medical diagnosis
+classification_weight: 0.005  # Conservative weight for medical images
 
 # Medical image specific parameters
 auto_augment: 0.0  # Disable auto augmentation

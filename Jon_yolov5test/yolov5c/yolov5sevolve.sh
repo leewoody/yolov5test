@@ -1,0 +1,2 @@
+cd /work/jonchang41/yolov5/ && sudo apt-get update && sudo apt-get install libgl1 -y && sudo pip install pandas && sudo pip install seaborn && pip uninstall -y Pillow && pip install Pillow==9.5.0 &&
+python train.py --img 448 --batch 32 --epochs 300 --data ../Regurgitation-YOLODataset-5/dataset.yaml --cfg ./models/yolov5s.yaml --weights '' --name yolov5s_evolve5 --cache --evolve 12

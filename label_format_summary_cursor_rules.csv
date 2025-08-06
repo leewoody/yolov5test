@@ -1,0 +1,8 @@
+﻿標籤類型,字段名稱,說明,示例
+YOLO格式檢測標籤,class_id,"檢測類別ID (0=AR, 1=MR, 2=PR, 3=TR)",2
+YOLO格式檢測標籤,center_x center_y,邊界框中心點座標,0.641420 0.586571
+YOLO格式檢測標籤,width height,邊界框寬度和高度,0.179133 0.318834
+YOLO格式檢測標籤,x1 y1 x2 y2 x3 y3 x4 y4,四邊形頂點座標,x1 y1 x2 y2 x3 y3 x4 y4
+One-hot編碼分類標籤,PSAX,胸骨旁短軸視角 (1或0),0
+One-hot編碼分類標籤,PLAX,胸骨旁長軸視角 (1或0),1
+One-hot編碼分類標籤,A4C,心尖四腔視角 (1或0),0

@@ -36,7 +36,7 @@ mixup: 0.0  # image mixup (probability) (disabled for medical images)
 copy_paste: 0.0  # segment copy-paste (probability) (disabled)
 
 # Classification loss parameters (FIXED)
-classification_enabled: false  # Disable classification by default
+classification_enabled: true  # Enable classification for YOLOv5WithClassification
 classification_weight: 0.05  # Very low classification weight when enabled
 
 # Other parameters

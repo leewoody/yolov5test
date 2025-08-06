@@ -1,0 +1,67 @@
+# YOLOv5WithClassification 聯合訓練超參數配置
+# 完全遵循 cursor rules - 醫學圖像專用配置
+
+# 聯合訓練配置 - 必須啟用
+classification_enabled: true        # 必須啟用分類功能
+classification_weight: 0.01         # 分類損失權重
+progressive_training: true          # 漸進式訓練
+classification_schedule: true       # 分類調度
+
+# 學習率配置
+lr0: 0.01                          # 初始學習率
+lrf: 0.01                          # 最終學習率 (lr0 * lrf)
+momentum: 0.937                    # SGD 動量
+weight_decay: 0.0005               # 權重衰減
+warmup_epochs: 3.0                 # 預熱週期
+warmup_momentum: 0.8               # 預熱動量
+warmup_bias_lr: 0.1                # 預熱偏置學習率
+
+# 損失函數權重
+box: 0.05                          # 邊界框損失權重
+cls: 0.5                           # 分類損失權重
+cls_pw: 1.0                        # 分類 positive 權重
+obj: 1.0                           # 物體置信度損失權重
+obj_pw: 1.0                        # 物體置信度 positive 權重
+iou_t: 0.20                        # IoU 訓練閾值
+anchor_t: 4.0                      # anchor 多重閾值
+fl_gamma: 0.0                      # focal loss gamma (efficientDet default gamma=1.5)
+
+# 數據擴增配置 - 醫學圖像專用 (完全關閉)
+# 重要：醫學圖像必須保持原始特徵，避免診斷干擾
+hsv_h: 0.0                         # 色調調整 (關閉)
+hsv_s: 0.0                         # 飽和度調整 (關閉)
+hsv_v: 0.0                         # 亮度調整 (關閉)
+degrees: 0.0                       # 旋轉角度 (關閉)
+translate: 0.0                     # 平移 (關閉)
+scale: 0.0                         # 縮放 (關閉)
+shear: 0.0                         # 剪切 (關閉)
+perspective: 0.0                   # 透視變換 (關閉)
+flipud: 0.0                        # 垂直翻轉 (關閉)
+fliplr: 0.0                        # 水平翻轉 (關閉)
+mosaic: 0.0                        # 馬賽克增強 (關閉)
+mixup: 0.0                         # 混合增強 (關閉)
+copy_paste: 0.0                    # 複製貼上增強 (關閉)
+
+# 醫學圖像特殊配置
+medical_image_mode: true           # 醫學圖像模式
+preserve_original_features: true   # 保持原始特徵
+disable_geometric_transforms: true # 禁用幾何變換
+disable_color_transforms: true     # 禁用顏色變換
+
+# 訓練策略配置
+early_stopping: false             # 關閉早停 (獲得完整訓練圖表)
+patience: .inf                    # 無限耐心
+save_period: 10                   # 每10個epoch保存一次
+
+# GradNorm 特定配置
+gradnorm_alpha: 1.5               # GradNorm alpha 參數
+adaptive_weight_balancing: true   # 自適應權重平衡
+gradient_normalization: true      # 梯度正規化
+
+# 備註
+# 此配置專為 YOLOv5WithClassification 聯合訓練設計
+# 嚴格遵循 cursor rules：
+# 1. 必須啟用分類功能
+# 2. 完全關閉數據擴增 (醫學圖像要求)
+# 3. 關閉早停機制 (完整訓練圖表)
+# 4. 支持 GradNorm 動態權重平衡 

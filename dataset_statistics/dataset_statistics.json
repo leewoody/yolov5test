@@ -1,0 +1,111 @@
+{
+  "detection_stats": {
+    "train": {
+      "TR": 259,
+      "AR": 254,
+      "MR": 256,
+      "PR": 63
+    },
+    "total": {
+      "TR": 409,
+      "AR": 426,
+      "MR": 407,
+      "PR": 104
+    },
+    "val": {
+      "AR": 66,
+      "MR": 61,
+      "TR": 60,
+      "PR": 21
+    },
+    "test": {
+      "TR": 90,
+      "MR": 90,
+      "AR": 106,
+      "PR": 20
+    }
+  },
+  "classification_stats": {
+    "train": {
+      "PLAX": 442,
+      "A4C": 298,
+      "PSAX": 92
+    },
+    "total": {
+      "PLAX": 612,
+      "A4C": 517,
+      "PSAX": 217
+    },
+    "val": {
+      "A4C": 76,
+      "PSAX": 19,
+      "PLAX": 113
+    },
+    "test": {
+      "PLAX": 57,
+      "PSAX": 106,
+      "A4C": 143
+    }
+  },
+  "combined_stats": {
+    "train": {
+      "TR_PLAX": 223,
+      "AR_PLAX": 42,
+      "MR_PLAX": 114,
+      "TR_A4C": 6,
+      "AR_A4C": 212,
+      "TR_PSAX": 30,
+      "PR_PLAX": 63,
+      "MR_A4C": 80,
+      "MR_PSAX": 62
+    },
+    "total": {
+      "TR_PLAX": 315,
+      "AR_PLAX": 53,
+      "MR_PLAX": 142,
+      "TR_A4C": 19,
+      "AR_A4C": 353,
+      "TR_PSAX": 75,
+      "PR_PLAX": 102,
+      "MR_A4C": 145,
+      "MR_PSAX": 120,
+      "AR_PSAX": 20,
+      "PR_PSAX": 2
+    },
+    "val": {
+      "AR_A4C": 56,
+      "MR_PSAX": 15,
+      "MR_A4C": 19,
+      "TR_PLAX": 55,
+      "AR_PLAX": 10,
+      "MR_PLAX": 27,
+      "TR_PSAX": 4,
+      "PR_PLAX": 21,
+      "TR_A4C": 1
+    },
+    "test": {
+      "TR_PLAX": 37,
+      "TR_PSAX": 41,
+      "MR_PSAX": 43,
+      "AR_A4C": 85,
+      "MR_A4C": 46,
+      "AR_PSAX": 20,
+      "PR_PLAX": 18,
+      "TR_A4C": 12,
+      "AR_PLAX": 1,
+      "PR_PSAX": 2,
+      "MR_PLAX": 1
+    }
+  },
+  "detection_classes": [
+    "AR",
+    "MR",
+    "PR",
+    "TR"
+  ],
+  "classification_classes": [
+    "PSAX",
+    "PLAX",
+    "A4C"
+  ]
+}

@@ -1,0 +1,9 @@
+names:
+- AR
+- MR
+- PR
+- TR
+nc: 4
+test: ../detection_only_dataset/test/images
+train: ../detection_only_dataset/train/images
+val: ../detection_only_dataset/valid/images

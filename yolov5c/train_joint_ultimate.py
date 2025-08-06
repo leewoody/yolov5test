@@ -276,7 +276,7 @@ def get_ultimate_transforms(split='train'):
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
 
-def train_model_ultimate(model, train_loader, val_loader, num_epochs=50, device='cuda'):
+def train_model_ultimate(model, train_loader, val_loader, num_epochs=50, device='cuda', bbox_weight=10.0, cls_weight=8.0, enable_earlystop=False):
     """Train the ultimate joint model with all advanced optimizations"""
     model = model.to(device)
     
@@ -303,10 +303,6 @@ def train_model_ultimate(model, train_loader, val_loader, num_epochs=50, device=
         anneal_strategy='cos'
     )
     
-    # Dynamic loss weights
-    bbox_weight = 1.0
-    cls_weight = 8.0  # Even higher weight for classification
-    
     best_val_cls_acc = 0.0
     best_model_state = None
     patience = 15  # Increased patience
@@ -331,8 +327,6 @@ def train_model_ultimate(model, train_loader, val_loader, num_epochs=50, device=
             
             # Calculate losses
             bbox_loss = bbox_criterion(bbox_pred, bbox_targets)
-            
-            # Use Focal Loss for classification
             cls_loss = cls_criterion_focal(cls_pred, cls_targets)
             
             # Combined loss
@@ -400,8 +394,8 @@ def train_model_ultimate(model, train_loader, val_loader, num_epochs=50, device=
         else:
             patience_counter += 1
         
-        # Early stopping
-        if patience_counter >= patience:
+        # Early stopping (only if enabled)
+        if enable_earlystop and patience_counter >= patience:
             print(f"Early stopping at epoch {epoch+1}")
             break
         
@@ -421,10 +415,12 @@ def train_model_ultimate(model, train_loader, val_loader, num_epochs=50, device=
 def main():
     parser = argparse.ArgumentParser(description='Ultimate Joint Detection and Classification Training')
     parser.add_argument('--data', type=str, required=True, help='Path to data.yaml file')
-    parser.add_argument('--epochs', type=int, default=50, help='Number of training epochs')
+    parser.add_argument('--epochs', type=int, default=10, help='Number of training epochs')
     parser.add_argument('--batch-size', type=int, default=16, help='Batch size')
     parser.add_argument('--device', type=str, default='auto', help='Device to use (auto, cuda, cpu)')
-    
+    parser.add_argument('--bbox-weight', type=float, default=10.0, help='Bbox loss weight')
+    parser.add_argument('--cls-weight', type=float, default=8.0, help='Classification loss weight')
+    parser.add_argument('--enable-earlystop', action='store_true', help='Enable early stopping')
     args = parser.parse_args()
     
     # Load data configuration
@@ -470,7 +466,7 @@ def main():
     print("- 分層學習率")
     print("- 增強 Early Stopping")
     
-    trained_model = train_model_ultimate(model, train_loader, val_loader, args.epochs, device)
+    trained_model = train_model_ultimate(model, train_loader, val_loader, args.epochs, device, bbox_weight=args.bbox_weight, cls_weight=args.cls_weight, enable_earlystop=args.enable_earlystop)
     
     # Save model
     save_path = 'joint_model_ultimate.pth'

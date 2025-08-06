@@ -1,0 +1,9 @@
+names:
+- AR
+- MR
+- PR
+- TR
+nc: 4
+train: ../Regurgitation-YOLODataset-1new/train/images
+val: ../Regurgitation-YOLODataset-1new/valid/images
+test: ../Regurgitation-YOLODataset-1new/test/images

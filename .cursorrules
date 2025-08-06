@@ -1,0 +1,226 @@
+# YOLOv5WithClassification 聯合訓練規則
+
+## 專案重點
+- 專案重點是 YOLOv5WithClassification 聯合檢測和分類
+- 必須啟用分類功能，不能禁用聯合訓練
+- 所有超參數文件都應配置為支持聯合訓練
+
+## 超參數配置規則
+
+### 必須啟用的配置文件
+1. **hyp_improved.yaml** - 改進版聯合訓練超參數
+   - `classification_enabled: true`
+   - `classification_weight: 0.01`
+
+2. **hyp_medical.yaml** - 醫學圖像聯合訓練超參數
+   - `classification_enabled: true`
+   - `classification_weight: 0.005`
+
+3. **hyp_medical_complete.yaml** - 醫學圖像完整聯合訓練超參數
+   - `classification_enabled: true`
+   - `classification_weight: 0.008`
+   - `progressive_training: true`
+   - `classification_schedule: true`
+
+4. **hyp_fixed.yaml** - 修復版聯合訓練超參數
+   - `classification_enabled: true`
+   - `classification_weight: 0.05`
+
+## 聯合訓練命令規則
+
+### 1. 高級聯合訓練 (train_joint_advanced.py)
+```bash
+# 基本高級聯合訓練
+python train_joint_advanced.py \
+    --data converted_dataset_fixed/data.yaml \
+    --epochs 50 \
+    --batch-size 16 \
+    --device auto
+
+# 關閉早停，獲得完整訓練圖表
+python train_joint_advanced.py \
+    --data converted_dataset_fixed/data.yaml \
+    --epochs 50 \
+    --batch-size 16 \
+    --device auto
+    # 移除 --enable-early-stop 參數
+```
+
+### 2. 終極聯合訓練 (train_joint_ultimate.py)
+```bash
+# 終極聯合訓練
+python train_joint_ultimate.py \
+    --data converted_dataset_fixed/data.yaml \
+    --epochs 50 \
+    --batch-size 16 \
+    --device auto \
+    --bbox-weight 10.0 \
+    --cls-weight 8.0
+
+# 關閉早停，獲得完整訓練圖表
+python train_joint_ultimate.py \
+    --data converted_dataset_fixed/data.yaml \
+    --epochs 50 \
+    --batch-size 16 \
+    --device auto \
+    --bbox-weight 10.0 \
+    --cls-weight 8.0
+    # 移除 --enable-earlystop 參數
+```
+
+### 3. 修復版聯合訓練 (train_joint_fixed.py)
+```bash
+# 修復版聯合訓練
+python train_joint_fixed.py \
+    --data converted_dataset_fixed/data.yaml \
+    --epochs 50 \
+    --batch-size 16 \
+    --device auto \
+    --log training_fixed.log
+```
+
+### 4. 優化修復版聯合訓練 (train_joint_optimized_fixed.py)
+```bash
+# 優化修復版聯合訓練
+python train_joint_optimized_fixed.py \
+    --data converted_dataset_fixed/data.yaml \
+    --weights yolov5s.pt \
+    --epochs 100 \
+    --batch-size 16 \
+    --imgsz 640
+```
+
+## 早停機制規則
+
+### 重要：關閉早停機制
+- **必須關閉早停機制** 以獲得完整的訓練圖表
+- 移除所有 `--enable-early-stop` 和 `--enable-earlystop` 參數
+- 這樣可以獲得：
+  - 完整訓練曲線
+  - 豐富的圖表數據
+  - AUTO-FIX 效果觀察
+  - 訓練穩定性評估
+
+### 關閉早停的原因
+1. **完整訓練曲線** - 可以看到整個訓練過程的趨勢
+2. **豐富的圖表數據** - 包括過擬合、準確率變化等
+3. **更好的分析** - 可以分析模型在不同階段的表現
+4. **AUTO-FIX 效果觀察** - 可以看到自動優化系統的完整效果
+5. **訓練穩定性評估** - 觀察模型在後期的表現
+
+## 數據擴增功能規則
+
+### 重要：建議關閉數據擴增
+- **醫學圖像訓練建議關閉數據擴增**
+- 保持醫學圖像的原始特徵和準確性
+- 避免數據擴增對醫學診斷的干擾
+
+### 數據擴增關閉建議
+1. **醫學圖像特殊性** - 醫學圖像需要保持原始特徵
+2. **診斷準確性** - 避免人為干擾影響診斷結果
+3. **模型穩定性** - 減少數據擴增帶來的不確定性
+4. **訓練一致性** - 確保訓練和推理環境的一致性
+
+### 超參數中的數據擴增設置
+```yaml
+# 建議的醫學圖像數據擴增設置
+degrees: 0.0      # 禁用旋轉
+shear: 0.0        # 禁用剪切
+perspective: 0.0  # 禁用透視變換
+mixup: 0.0        # 禁用混合
+copy_paste: 0.0   # 禁用複製貼上
+flipud: 0.0       # 禁用垂直翻轉
+```
+
+## 推薦訓練策略
+
+### 階段 1：基礎聯合訓練
+```bash
+python train_joint_fixed.py \
+    --data converted_dataset_fixed/data.yaml \
+    --epochs 20 \
+    --batch-size 16 \
+    --device auto
+```
+
+### 階段 2：高級優化訓練
+```bash
+python train_joint_advanced.py \
+    --data converted_dataset_fixed/data.yaml \
+    --epochs 50 \
+    --batch-size 16 \
+    --device auto
+```
+
+### 階段 3：終極聯合訓練
+```bash
+python train_joint_ultimate.py \
+    --data converted_dataset_fixed/data.yaml \
+    --epochs 50 \
+    --batch-size 16 \
+    --device auto \
+    --bbox-weight 10.0 \
+    --cls-weight 8.0
+```
+
+## 快速測試命令
+
+```bash
+# 快速測試（小數據集，少輪數）
+python train_joint_advanced.py \
+    --data demo/data.yaml \
+    --epochs 5 \
+    --batch-size 8 \
+    --device auto
+
+# 快速測試終極版本
+python train_joint_ultimate.py \
+    --data demo/data.yaml \
+    --epochs 3 \
+    --batch-size 8 \
+    --device auto \
+    --bbox-weight 5.0 \
+    --cls-weight 5.0
+```
+
+## 預期輸出文件
+
+每個訓練腳本會生成：
+- `joint_model_advanced.pth` / `joint_model_fixed.pth` / `joint_model_ultimate.pth`
+- `training_history_advanced.json` / `training_history_fixed.json`
+- 訓練日誌文件
+
+## 預期獲得的圖表
+
+關閉早停後，將獲得：
+1. **訓練損失曲線** - 完整的訓練和驗證損失變化
+2. **分類準確率曲線** - 驗證準確率的完整變化趨勢
+3. **AUTO-FIX 效果圖** - 自動優化系統的干預次數和效果
+4. **學習率變化圖** - 動態學習率調整的完整過程
+5. **損失權重變化圖** - 分類損失權重的動態調整
+6. **過擬合檢測圖** - 過擬合風險的完整監控
+
+## 注意事項
+
+1. **數據集路徑**：確保使用正確的 `data.yaml` 文件
+2. **GPU 記憶體**：如果記憶體不足，減少 `batch-size`
+3. **訓練時間**：終極版本訓練時間較長，建議先用小數據集測試
+4. **早停機制**：必須關閉以獲得完整圖表
+5. **聯合訓練**：必須啟用分類功能，不能禁用
+6. **數據擴增**：醫學圖像建議關閉數據擴增，保持原始特徵
+7. **醫學圖像特殊性**：注意醫學圖像的診斷準確性要求
+
+## 禁止事項
+
+- 禁止禁用分類功能 (`classification_enabled: false`)
+- 禁止使用 `--enable-early-stop` 或 `--enable-earlystop` 參數
+- 禁止使用純檢測訓練模式
+- 禁止修改超參數文件中的分類設置為禁用狀態
+- 禁止在醫學圖像訓練中啟用強力數據擴增
+- 禁止使用可能影響醫學診斷準確性的數據擴增技術
+
+## 語言規則
+
+- 回應使用繁體中文
+- 腳本註釋使用英文
+- 保持專業和技術準確性 

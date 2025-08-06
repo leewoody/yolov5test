@@ -1,0 +1,7 @@
+train: ../demo2/train/images
+val: ../demo2/valid/images
+test: ../demo2/test/images
+
+nc: 2
+names: ['ASDType2', 'VSDType2']
+

@@ -1,0 +1,9 @@
+names:
+- AR
+- MR
+- PR
+- TR
+nc: 4
+test: ./test/images
+train: ./train/images
+val: ./valid/images

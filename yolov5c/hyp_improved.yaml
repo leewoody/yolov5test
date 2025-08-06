@@ -36,9 +36,9 @@ mosaic: 1.0  # image mosaic (probability)
 mixup: 0.0  # image mixup (probability) (disabled for medical images)
 copy_paste: 0.0  # segment copy-paste (probability) (disabled)
 
-# Classification loss parameters - VERY CONSERVATIVE
-classification_enabled: false  # Disable classification by default
-classification_weight: 0.01  # Extremely low classification weight when enabled
+# Classification loss parameters - OPTIMIZED for joint training
+classification_enabled: true  # Enable classification for YOLOv5WithClassification
+classification_weight: 0.01  # Conservative classification weight
 
 # Other parameters
 auto_augment: 0.0  # auto augmentation policy

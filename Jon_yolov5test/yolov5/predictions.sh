@@ -1,0 +1,2 @@
+cd /home/u3307479/yolov5 && sudo apt-get update && sudo apt-get install libgl1 -y &&
+python val.py --weights runs/train/allArtsYOLOv5s2/weights/best.pt --img 416 --conf 0.4 --data ../MergedItemsYOLODataset/data.yaml --verbose --save-conf --save-hybrid --name allArtsYOLOv5s 

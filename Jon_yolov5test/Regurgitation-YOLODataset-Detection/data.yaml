@@ -1,0 +1,10 @@
+# YOLO Detection Dataset
+names:
+- AR
+- MR
+- PR
+- TR
+nc: 4
+train: C:/Users/darks/Desktop/yolov5test/Regurgitation-YOLODataset-Detection/train/images
+val: C:/Users/darks/Desktop/yolov5test/Regurgitation-YOLODataset-Detection/valid/images
+test: C:/Users/darks/Desktop/yolov5test/Regurgitation-YOLODataset-Detection/test/images
